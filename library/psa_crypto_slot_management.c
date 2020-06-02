@@ -183,41 +183,6 @@ static int psa_is_key_id_valid( psa_key_file_id_t file_id,
 }
 #endif /* defined(MBEDTLS_PSA_CRYPTO_STORAGE_C) */
 
-psa_status_t psa_validate_persistent_key_parameters(
-    psa_key_lifetime_t lifetime,
-    psa_key_file_id_t id,
-    psa_se_drv_table_entry_t **p_drv,
-    int creating )
-{
-    if( p_drv != NULL )
-        *p_drv = NULL;
-#if defined(MBEDTLS_PSA_CRYPTO_SE_C)
-    if( psa_key_lifetime_is_external( lifetime ) )
-    {
-        *p_drv = psa_get_se_driver_entry( lifetime );
-        if( *p_drv == NULL )
-            return( PSA_ERROR_INVALID_ARGUMENT );
-    }
-    else
-#endif /* MBEDTLS_PSA_CRYPTO_SE_C */
-    if( ( PSA_KEY_LIFETIME_GET_LOCATION( lifetime )
-            != PSA_KEY_LOCATION_LOCAL_STORAGE ) ||
-        ( PSA_KEY_LIFETIME_GET_PERSISTENCE( lifetime )
-            != PSA_KEY_PERSISTENCE_DEFAULT ) )
-        return( PSA_ERROR_INVALID_ARGUMENT );
-
-#if defined(MBEDTLS_PSA_CRYPTO_STORAGE_C)
-    if( ! psa_is_key_id_valid( id, ! creating ) )
-        return( PSA_ERROR_INVALID_ARGUMENT );
-    return( PSA_SUCCESS );
-
-#else /* MBEDTLS_PSA_CRYPTO_STORAGE_C */
-    (void) id;
-    (void) creating;
-    return( PSA_ERROR_NOT_SUPPORTED );
-#endif /* !MBEDTLS_PSA_CRYPTO_STORAGE_C */
-}
-
 psa_status_t psa_open_key( psa_key_file_id_t id, psa_key_handle_t *handle )
 {
 #if defined(MBEDTLS_PSA_CRYPTO_STORAGE_C)
@@ -226,10 +191,8 @@ psa_status_t psa_open_key( psa_key_file_id_t id, psa_key_handle_t *handle )
 
     *handle = 0;
 
-    status = psa_validate_persistent_key_parameters(
-        PSA_KEY_LIFETIME_PERSISTENT, id, NULL, 0 );
-    if( status != PSA_SUCCESS )
-        return( status );
+    if( ! psa_is_key_id_valid( id, 1 ) )
+        return( PSA_ERROR_INVALID_ARGUMENT );
 
     status = psa_get_empty_key_slot( handle, &slot );
     if( status != PSA_SUCCESS )

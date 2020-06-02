@@ -1498,16 +1498,46 @@ static psa_status_t psa_validate_key_attributes(
     const psa_key_attributes_t *attributes,
     psa_se_drv_table_entry_t **p_drv )
 {
-    psa_status_t status;
+    psa_status_t status = PSA_ERROR_INVALID_ARGUMENT;
+    psa_key_lifetime_t lifetime = psa_get_key_lifetime( attributes );
 
-    if( ! PSA_KEY_LIFETIME_IS_VOLATILE( attributes->core.lifetime ) )
+    /* Check there is a proper handler for this lifetime */
+    if ( PSA_KEY_LIFETIME_GET_LOCATION( lifetime )
+         != PSA_KEY_LOCATION_LOCAL_STORAGE )
     {
-        status = psa_validate_persistent_key_parameters(
-            attributes->core.lifetime, attributes->core.id,
-            p_drv, 1 );
-        if( status != PSA_SUCCESS )
-            return( status );
+#if defined(MBEDTLS_PSA_CRYPTO_SE_C)
+        psa_se_drv_table_entry_t *p_drv_e = psa_get_se_driver_entry( lifetime );
+        if( p_drv_e == NULL )
+            status = PSA_ERROR_INVALID_ARGUMENT;
+        else
+        {
+            if (p_drv != NULL)
+                *p_drv = p_drv_e;
+            status = PSA_SUCCESS;
+        }
+#endif /* MBEDTLS_PSA_CRYPTO_SE_C */
     }
+    else
+    {
+        if( ! PSA_KEY_LIFETIME_IS_VOLATILE( lifetime ) ) {
+            /* PSA Core needs storage to support persistent local keys */
+#if defined(MBEDTLS_PSA_CRYPTO_STORAGE_C)
+            psa_key_id_t key_id = psa_get_key_id( attributes );
+            if( PSA_KEY_ID_USER_MIN <= key_id && key_id <= PSA_KEY_ID_USER_MAX )
+                status = PSA_SUCCESS;
+            else
+                status = PSA_ERROR_INVALID_ARGUMENT;
+#else /* MBEDTLS_PSA_CRYPTO_STORAGE_C */
+            status = PSA_ERROR_NOT_SUPPORTED;
+#endif /* !MBEDTLS_PSA_CRYPTO_STORAGE_C */
+        } else {
+            /* PSA Core is always able to store a volatile key internally */
+            status = PSA_SUCCESS;
+        }
+    }
+
+    if( status != PSA_SUCCESS )
+        return( status );
 
     status = psa_validate_key_policy( &attributes->core.policy );
     if( status != PSA_SUCCESS )
