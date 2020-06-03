@@ -92,5 +92,33 @@ static inline int psa_key_lifetime_is_external( psa_key_lifetime_t lifetime )
                 != PSA_KEY_LOCATION_LOCAL_STORAGE );
 }
 
+/** Validate that a key's attributes point to a known location.
+ *
+ * This function checks whether the key's attributes point to a location that
+ * is known to the PSA Core, and returns the driver function table if the key
+ * is to be found in an external location.
+ *
+ * \param[in] attributes    The key attributes.
+ * \param[out] p_drv        On success, when a key is located in external
+ *                          storage, returns a pointer to the driver table
+ *                          associated with the key's storage location.
+ *
+ * \retval #PSA_SUCCESS
+ * \retval #PSA_ERROR_INVALID_ARGUMENT
+ */
+psa_status_t psa_validate_key_location( const psa_key_attributes_t *attributes,
+                                        psa_se_drv_table_entry_t **p_drv );
+
+/** Validate that a key's persistence is consistent.
+ *
+ * This function checks whether a key's persistence attribute is consistent.
+ *
+ * \param[in] attributes    The key attributes.
+ *
+ * \retval #PSA_SUCCESS
+ * \retval #PSA_ERROR_INVALID_ARGUMENT
+ */
+psa_status_t psa_validate_key_persistence( const psa_key_attributes_t *attributes );
+
 
 #endif /* PSA_CRYPTO_SLOT_MANAGEMENT_H */
