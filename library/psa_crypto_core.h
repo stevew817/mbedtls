@@ -43,22 +43,26 @@ typedef struct
     psa_core_key_attributes_t attr;
     union
     {
-        /* Raw-data key (key_type_is_raw_bytes() in psa_crypto.c) */
-        struct raw_data
+        /* Dynamically allocated key data buffer.
+         * Format as specified in psa_export_key() */
+        struct key_data
         {
             uint8_t *data;
             size_t bytes;
-        } raw;
+        } key;
+        /* Dynamically allocated alternate key representation. Used if the key
+         * is to be exercised by a software library, to prevent conversion from
+         * having to happen on each operation */
+        union {
 #if defined(MBEDTLS_RSA_C)
-        /* RSA public key or key pair */
-        mbedtls_rsa_context *rsa;
-#endif /* MBEDTLS_RSA_C */
+            mbedtls_rsa_context *rsa;
+#endif /* defined(MBEDTLS_RSA_C) */
 #if defined(MBEDTLS_ECP_C)
-        /* EC public key or key pair */
-        mbedtls_ecp_keypair *ecp;
-#endif /* MBEDTLS_ECP_C */
+            mbedtls_ecp_keypair *ecp;
+#endif /* defined(MBEDTLS_ECP_C) */
+        } internal_representation;
 #if defined(MBEDTLS_PSA_CRYPTO_SE_C)
-        /* Any key type in a secure element */
+        /* Any key located in a secure element is referenced by slot number */
         struct se
         {
             psa_key_slot_number_t slot_number;
