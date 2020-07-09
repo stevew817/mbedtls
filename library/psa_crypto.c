@@ -970,26 +970,32 @@ static psa_status_t psa_remove_key_data_from_memory( psa_key_slot_t *slot )
     else if( key_type_is_raw_bytes( slot->attr.type ) )
     {
         mbedtls_free( slot->data.key.data );
+        slot->data.key.data = NULL;
     }
     else if( PSA_KEY_TYPE_IS_RSA( slot->attr.type ) )
     {
 #if defined(MBEDTLS_RSA_C)
         mbedtls_rsa_free( slot->data.internal_representation.rsa );
         mbedtls_free( slot->data.internal_representation.rsa );
+        slot->data.internal_representation.rsa = NULL;
 #endif /* defined(MBEDTLS_RSA_C) */
         mbedtls_free( slot->data.key.data );
+        slot->data.key.data = NULL;
     }
     else if( PSA_KEY_TYPE_IS_ECC( slot->attr.type ) )
     {
 #if defined(MBEDTLS_ECP_C)
         mbedtls_ecp_keypair_free( slot->data.internal_representation.ecp );
         mbedtls_free( slot->data.internal_representation.ecp );
+        slot->data.internal_representation.ecp = NULL;
 #endif /* defined(MBEDTLS_ECP_C) */
         mbedtls_free( slot->data.key.data );
+        slot->data.key.data = NULL;
     }
     else if( PSA_KEY_TYPE_IS_DH( slot->attr.type ) )
     {
         mbedtls_free( slot->data.key.data );
+        slot->data.key.data = NULL;
     }
     else
     {
@@ -1487,6 +1493,20 @@ static int pk_write_pubkey_simple( mbedtls_pk_context *key,
 }
 #endif /* defined(MBEDTLS_RSA_C) || defined(MBEDTLS_ECP_C) */
 
+static psa_status_t psa_internal_export_key_buffer( psa_key_slot_t *slot,
+                                                    uint8_t *data,
+                                                    size_t data_size,
+                                                    size_t *data_length )
+{
+    if( slot->data.key.bytes > data_size )
+        return( PSA_ERROR_BUFFER_TOO_SMALL );
+    memcpy( data, slot->data.key.data, slot->data.key.bytes );
+    memset( data + slot->data.key.bytes, 0,
+            data_size - slot->data.key.bytes );
+    *data_length = slot->data.key.bytes;
+    return( PSA_SUCCESS );
+}
+
 static psa_status_t psa_internal_export_key( psa_key_slot_t *slot,
                                              uint8_t *data,
                                              size_t data_size,
@@ -1528,103 +1548,87 @@ static psa_status_t psa_internal_export_key( psa_key_slot_t *slot,
 
     if( key_type_is_raw_bytes( slot->attr.type ) )
     {
-        if( slot->data.key.bytes > data_size )
-            return( PSA_ERROR_BUFFER_TOO_SMALL );
-        memcpy( data, slot->data.key.data, slot->data.key.bytes );
-        memset( data + slot->data.key.bytes, 0,
-                data_size - slot->data.key.bytes );
-        *data_length = slot->data.key.bytes;
-        return( PSA_SUCCESS );
+        return( psa_internal_export_key_buffer( slot, data, data_size, data_length ) );
     }
-#if defined(MBEDTLS_ECP_C)
-    if( PSA_KEY_TYPE_IS_ECC_KEY_PAIR( slot->attr.type ) && !export_public_key )
+    else if( PSA_KEY_TYPE_IS_RSA( slot->attr.type ) ||
+             PSA_KEY_TYPE_IS_ECC( slot->attr.type ) )
     {
-        psa_status_t status = psa_check_ecp_representation_loaded( slot );
-        if( status != PSA_SUCCESS )
-            return status;
-        size_t bytes = PSA_BITS_TO_BYTES( slot->attr.bits );
-        if( bytes > data_size )
-            return( PSA_ERROR_BUFFER_TOO_SMALL );
-        status = mbedtls_to_psa_error(
-            mbedtls_mpi_write_binary( &slot->data.internal_representation.ecp->d, data, bytes ) );
-        if( status != PSA_SUCCESS )
-            return( status );
-        memset( data + bytes, 0, data_size - bytes );
-        *data_length = bytes;
-        return( PSA_SUCCESS );
-    }
-#endif
-    else
-    {
-#if defined(MBEDTLS_PK_WRITE_C)
-        if( PSA_KEY_TYPE_IS_RSA( slot->attr.type ) ||
-            PSA_KEY_TYPE_IS_ECC( slot->attr.type ) )
+        if( PSA_KEY_TYPE_IS_PUBLIC_KEY( slot->attr.type ) )
         {
-            mbedtls_pk_context pk;
-            int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
-            if( PSA_KEY_TYPE_IS_RSA( slot->attr.type ) )
-            {
+            /* Exporting public -> public */
+            return( psa_internal_export_key_buffer( slot, data, data_size, data_length ) );
+        }
+        else if( !export_public_key )
+        {
+            /* Exporting private -> private */
+            return( psa_internal_export_key_buffer( slot, data, data_size, data_length ) );
+        }
+        /* Need to export the public part of a private key,
+         * so conversion is needed */
+#if defined(MBEDTLS_PK_WRITE_C)
+        mbedtls_pk_context pk;
+        int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+        if( PSA_KEY_TYPE_IS_RSA( slot->attr.type ) )
+        {
 #if defined(MBEDTLS_RSA_C)
-                psa_status_t status = psa_check_rsa_representation_loaded( slot );
-                if( status != PSA_SUCCESS )
-                    return status;
-                mbedtls_pk_init( &pk );
-                pk.pk_info = &mbedtls_rsa_info;
-                pk.pk_ctx = slot->data.internal_representation.rsa;
+            psa_status_t status = psa_check_rsa_representation_loaded( slot );
+            if( status != PSA_SUCCESS )
+                return status;
+            mbedtls_pk_init( &pk );
+            pk.pk_info = &mbedtls_rsa_info;
+            pk.pk_ctx = slot->data.internal_representation.rsa;
 #else
-                return( PSA_ERROR_NOT_SUPPORTED );
+            /* We don't know how to convert a private RSA key to public. */
+            return( PSA_ERROR_NOT_SUPPORTED );
 #endif
-            }
-            else
-            {
-#if defined(MBEDTLS_ECP_C)
-                psa_status_t status = psa_check_ecp_representation_loaded( slot );
-                if( status != PSA_SUCCESS )
-                    return status;
-                mbedtls_pk_init( &pk );
-                pk.pk_info = &mbedtls_eckey_info;
-                pk.pk_ctx = slot->data.internal_representation.ecp;
-#else
-                return( PSA_ERROR_NOT_SUPPORTED );
-#endif
-            }
-            if( export_public_key || PSA_KEY_TYPE_IS_PUBLIC_KEY( slot->attr.type ) )
-            {
-                ret = pk_write_pubkey_simple( &pk, data, data_size );
-            }
-            else
-            {
-                ret = mbedtls_pk_write_key_der( &pk, data, data_size );
-            }
-            if( ret < 0 )
-            {
-                memset( data, 0, data_size );
-                return( mbedtls_to_psa_error( ret ) );
-            }
-            /* The mbedtls_pk_xxx functions write to the end of the buffer.
-             * Move the data to the beginning and erase remaining data
-             * at the original location. */
-            if( 2 * (size_t) ret <= data_size )
-            {
-                memcpy( data, data + data_size - ret, ret );
-                memset( data + data_size - ret, 0, ret );
-            }
-            else if( (size_t) ret < data_size )
-            {
-                memmove( data, data + data_size - ret, ret );
-                memset( data + ret, 0, data_size - ret );
-            }
-            *data_length = ret;
-            return( PSA_SUCCESS );
         }
         else
-#endif /* defined(MBEDTLS_PK_WRITE_C) */
         {
-            /* This shouldn't happen in the reference implementation, but
-               it is valid for a special-purpose implementation to omit
-               support for exporting certain key types. */
+#if defined(MBEDTLS_ECP_C)
+            psa_status_t status = psa_check_ecp_representation_loaded( slot );
+            if( status != PSA_SUCCESS )
+                return status;
+            mbedtls_pk_init( &pk );
+            pk.pk_info = &mbedtls_eckey_info;
+            pk.pk_ctx = slot->data.internal_representation.ecp;
+#else
+            /* We don't know how to convert a private ECC key to public */
             return( PSA_ERROR_NOT_SUPPORTED );
+#endif
         }
+
+        ret = pk_write_pubkey_simple( &pk, data, data_size );
+        if( ret < 0 )
+        {
+            memset( data, 0, data_size );
+            return( mbedtls_to_psa_error( ret ) );
+        }
+        /* The mbedtls_pk_xxx functions write to the end of the buffer.
+         * Move the data to the beginning and erase remaining data
+         * at the original location. */
+        if( 2 * (size_t) ret <= data_size )
+        {
+            memcpy( data, data + data_size - ret, ret );
+            memset( data + data_size - ret, 0, ret );
+        }
+        else if( (size_t) ret < data_size )
+        {
+            memmove( data, data + data_size - ret, ret );
+            memset( data + ret, 0, data_size - ret );
+        }
+        *data_length = ret;
+        return( PSA_SUCCESS );
+#else /* defined(MBEDTLS_PK_WRITE_C) */
+        /* We don't know how to format a public key output */
+        return( PSA_ERROR_NOT_SUPPORTED );
+#endif /* defined(MBEDTLS_PK_WRITE_C) */
+    }
+    else
+    {
+        /* This shouldn't happen in the reference implementation, but
+           it is valid for a special-purpose implementation to omit
+           support for exporting certain key types. */
+        return( PSA_ERROR_NOT_SUPPORTED );
     }
 }
 
@@ -5572,7 +5576,7 @@ static psa_status_t psa_key_agreement_raw_internal( psa_algorithm_t alg,
 {
     switch( alg )
     {
-#if defined(MBEDTLS_ECDH_C)
+#if defined(MBEDTLS_ECDH_C) && defined(MBEDTLS_ECP_C)
         case PSA_ALG_ECDH:
             if( ! PSA_KEY_TYPE_IS_ECC_KEY_PAIR( private_key->attr.type ) )
                 return( PSA_ERROR_INVALID_ARGUMENT );
@@ -5838,11 +5842,69 @@ static psa_status_t psa_generate_key_internal(
                                    exponent );
         if( ret != 0 )
         {
-            mbedtls_rsa_free( rsa );
-            mbedtls_free( rsa );
+            psa_remove_key_data_from_memory( slot );
             return( mbedtls_to_psa_error( ret ) );
         }
         slot->data.internal_representation.rsa = rsa;
+
+        /* Make sure to always have an export representation available */
+#if defined(MBEDTLS_PK_WRITE_C)
+        mbedtls_pk_context pk;
+        mbedtls_pk_init( &pk );
+        pk.pk_info = &mbedtls_rsa_info;
+        pk.pk_ctx = rsa;
+
+        /* The size of a DER-encoded RSA private key is worst-case:
+         * ASN1 sequence start & length: 4 bytes
+         * PKCS#1 RSA version and sequence: 3 bytes
+         * n: (2*bits) + sign byte + 4 bytes encoding
+         * e: 4 bytes + sign byte + 2 bytes encoding
+         * d: (2*bits) + sign byte + 4 bytes encoding
+         * p: bits + sign byte + 4 bytes encoding
+         * q: bits + sign byte + 4 bytes encoding
+         * dp: bits + sign byte + 4 bytes encoding
+         * dq: bits + sign byte + 4 bytes encoding
+         * qp: bits + sign byte + 4 bytes encoding */
+        size_t bytes = PSA_BITS_TO_BYTES( bits );
+        bytes *= 9;
+        bytes += 4;
+        bytes += (8 * 5);
+
+        slot->data.key.data = mbedtls_calloc( 1, bytes );
+        if( slot->data.key.data == NULL )
+        {
+            psa_remove_key_data_from_memory( slot );
+            return( PSA_ERROR_INSUFFICIENT_MEMORY );
+        }
+
+
+        ret = mbedtls_pk_write_key_der( &pk, slot->data.key.data, bytes );
+
+        if( ret < 0 )
+        {
+            memset( slot->data.key.data, 0, bytes );
+            psa_remove_key_data_from_memory( slot );
+            return( mbedtls_to_psa_error( ret ) );
+        }
+        /* The mbedtls_pk_xxx functions write to the end of the buffer.
+         * Move the data to the beginning and erase remaining data
+         * at the original location. */
+        if( 2 * (size_t) ret <= bytes )
+        {
+            memcpy( slot->data.key.data, slot->data.key.data + bytes - ret, ret );
+            memset( slot->data.key.data + bytes - ret, 0, ret );
+        }
+        else if( (size_t) ret < bytes )
+        {
+            memmove( slot->data.key.data, slot->data.key.data + bytes - ret, ret );
+            memset( slot->data.key.data + ret, 0, bytes - ret );
+        }
+        slot->data.key.bytes = ret;
+        return( PSA_SUCCESS );
+#else /* defined(MBEDTLS_PK_WRITE_C) */
+        psa_remove_key_data_from_memory( slot );
+        return( PSA_ERROR_NOT_SUPPORTED );
+#endif
     }
     else
 #endif /* MBEDTLS_RSA_C && MBEDTLS_GENPRIME */
@@ -5872,11 +5934,28 @@ static psa_status_t psa_generate_key_internal(
                                    &global_data.ctr_drbg );
         if( ret != 0 )
         {
-            mbedtls_ecp_keypair_free( ecp );
-            mbedtls_free( ecp );
+            psa_remove_key_data_from_memory( slot );
             return( mbedtls_to_psa_error( ret ) );
         }
         slot->data.internal_representation.ecp = ecp;
+
+        /* Make sure to always have an export representation available */
+        size_t bytes = PSA_BITS_TO_BYTES( bits );
+        slot->data.key.data = mbedtls_calloc( 1, bytes );
+        if( slot->data.key.data == NULL )
+        {
+            psa_remove_key_data_from_memory( slot );
+            return( PSA_ERROR_INSUFFICIENT_MEMORY );
+        }
+        slot->data.key.bytes = bytes;
+        psa_status_t status = mbedtls_to_psa_error(
+            mbedtls_mpi_write_binary( &ecp->d, slot->data.key.data, bytes ) );
+        if( status != PSA_SUCCESS )
+        {
+            psa_remove_key_data_from_memory( slot );
+            return( status );
+        }
+        return( PSA_SUCCESS );
     }
     else
 #endif /* MBEDTLS_ECP_C */
