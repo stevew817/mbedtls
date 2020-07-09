@@ -803,194 +803,6 @@ static psa_status_t psa_check_ecp_representation_loaded( psa_key_slot_t *slot )
 }
 #endif /* defined(MBEDTLS_ECP_C) */
 
-
-/** Return the size of the key in the given slot, in bits.
- *
- * \param[in] slot      A key slot.
- *
- * \return The key size in bits, read from the metadata in the slot.
- */
-static inline size_t psa_get_key_slot_bits( const psa_key_slot_t *slot )
-{
-    return( slot->attr.bits );
-}
-
-/** Check whether the key input is sane according to the PSA Crypto API spec.
- *
- * \param[in] slot          A key slot where the key input is to be stored.
- * \param[in] data          The binary key input to sanity-check.
- * \param[in] data_length   The length of the binary key input in bytes.
- * \param[out] bits         The detected key bit size.
- *
- * \retval PSA_SUCCESS
- *         The input key data passes sanity-checking against the key type
- *         declared in the slot attributes. This is not a guarantee that the key
- *         is correctly formatted, only that the internal keystore is able to
- *         store the binary key representation.
- * \retval PSA_ERROR_NOT_SUPPORTED
- *         The input key data cannot be stored by the implementation, or fails
- *         an initial sanity check.
- */
-static psa_status_t psa_is_key_supported( psa_key_slot_t *slot,
-                                          const uint8_t *data,
-                                          size_t data_length,
-                                          psa_key_bits_t *bits )
-{
-    psa_status_t status = PSA_SUCCESS;
-
-    /* zero-length keys are never supported */
-    if( data_length == 0 )
-        return( PSA_ERROR_NOT_SUPPORTED );
-
-    /* Ensure that the bytes-to-bit conversion doesn't overflow. */
-    if( data_length > SIZE_MAX / 8 )
-        return( PSA_ERROR_NOT_SUPPORTED );
-
-    if( key_type_is_raw_bytes( slot->attr.type ) )
-    {
-        size_t bit_size = PSA_BYTES_TO_BITS( data_length );
-
-        /* Enforce a size limit, and in particular ensure that the bit
-         * size fits in its representation type. */
-        if( bit_size > PSA_MAX_KEY_BITS )
-            return( PSA_ERROR_NOT_SUPPORTED );
-
-        status = validate_unstructured_key_bit_size( slot->attr.type, bit_size );
-
-        if( status == PSA_SUCCESS )
-        {
-            *bits = (psa_key_bits_t) bit_size;
-        }
-    }
-    else if( PSA_KEY_TYPE_IS_ECC_KEY_PAIR( slot->attr.type ) )
-    {
-        /* PSA Crypto API defines the format of an ECC key pair as a
-         * ceiling(m/8)-byte string, where m is the curve size in bits. For
-         * sanity checking, we check whether the data length matches with this
-         * expectation. */
-        status = validate_ecc_key_bit_size( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
-                                            data_length,
-                                            bits );
-
-    }
-    else if( PSA_KEY_TYPE_IS_ECC_PUBLIC_KEY( slot->attr.type ) )
-    {
-        /* PSA Crypto API defines the format of an ECC public key as as the
-         * content of an ECPoint for all curve types except
-         * PSA_ECC_FAMILY_MONTGOMERY. For the latter, the expected public key
-         * format is the binary representation of the public scalar.
-         * For sanity checking, we check whether the data length matches with
-         * these expectations. */
-        if( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ) == PSA_ECC_FAMILY_MONTGOMERY )
-        {
-            status = validate_ecc_key_bit_size( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
-                                                data_length,
-                                                bits );
-        }
-        else
-        {
-            status = validate_ecc_key_bit_size( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
-                                                (data_length - 1) / 2,
-                                                bits );
-        }
-    }
-    else if( PSA_KEY_TYPE_IS_RSA( slot->attr.type ) )
-    {
-        /* PSA Crypto API defines the format of an RSA key as a DER-encoded
-         * representation of respectively the non-encrypted PKCS#1 RSAPrivateKey
-         * or the RFC3279 RSAPublicKey for a private key or a public key. That
-         * means we have no other choice then to run a bogus import to verify
-         * the key size. */
-#if defined(MBEDTLS_RSA_C) && defined(MBEDTLS_PK_PARSE_C)
-        status = psa_import_rsa_key( slot->attr.type,
-                                     data, data_length,
-                                     &slot->data.internal_representation.rsa );
-
-        if( status == PSA_SUCCESS )
-        {
-            *bits = (psa_key_bits_t) PSA_BYTES_TO_BITS( mbedtls_rsa_get_len( slot->data.internal_representation.rsa ) );
-        }
-
-        mbedtls_rsa_free( slot->data.internal_representation.rsa );
-        mbedtls_free( slot->data.internal_representation.rsa );
-        slot->data.internal_representation.rsa = NULL;
-#else
-        status = PSA_ERROR_NOT_SUPPORTED;
-#endif
-    }
-    else if( PSA_KEY_TYPE_IS_DH( slot->attr.type ) )
-    {
-        /* PSA Crypto API defines the format of an DH key pair as the
-         * representation of the private key x as a big-endian byte string. For
-         * a public key, this is the representation of the public key y as a
-         * big-endian byte string. Both are thus expected to be the same size as
-         * domain parameter p. For sanity checking, we check whether the data
-         * length matches with this expectation. */
-        if( PSA_KEY_TYPE_DH_GET_FAMILY( slot->attr.type ) == PSA_DH_FAMILY_RFC7919 )
-        {
-            switch( data_length )
-            {
-                case PSA_BITS_TO_BYTES(2048):
-                case PSA_BITS_TO_BYTES(3072):
-                case PSA_BITS_TO_BYTES(4096):
-                case PSA_BITS_TO_BYTES(6144):
-                case PSA_BITS_TO_BYTES(8192):
-                    *bits = (psa_key_bits_t) PSA_BYTES_TO_BITS( data_length );
-                    break;
-                default:
-                    status = PSA_ERROR_NOT_SUPPORTED;
-                    break;
-            }
-        }
-        else
-        {
-            status = PSA_ERROR_NOT_SUPPORTED;
-        }
-    }
-    else
-    {
-        /* Unknown key type */
-        return( PSA_ERROR_NOT_SUPPORTED );
-    }
-
-    return( status );
-}
-
-/** Import key data into a slot. `slot->attr.type` must have been set
- * previously. This function assumes that the slot does not contain
- * any key material yet. On failure, the slot content is unchanged. */
-psa_status_t psa_import_key_into_slot( psa_key_slot_t *slot,
-                                       const uint8_t *data,
-                                       size_t data_length )
-{
-    psa_key_bits_t bits;
-    psa_status_t status = psa_is_key_supported(slot, data, data_length, &bits);
-
-    if( status != PSA_SUCCESS )
-    {
-        return( status );
-    }
-
-    /* Allocate memory for the key */
-    slot->data.key.bytes = data_length;
-    slot->data.key.data = mbedtls_calloc( 1, slot->data.key.bytes );
-    if( slot->data.key.data == NULL )
-    {
-        slot->data.key.bytes = 0;
-        return( PSA_ERROR_INSUFFICIENT_MEMORY );
-    }
-
-    /* copy key into allocated buffer */
-    memcpy(slot->data.key.data, data, data_length);
-
-    /* Write the actual key size to the slot.
-     * psa_start_key_creation() wrote the size declared by the
-     * caller, which may be 0 (meaning unspecified) or wrong. */
-    slot->attr.bits = bits;
-
-    return( status );
-}
-
 /** Calculate the intersection of two algorithm usage policies.
  *
  * Return 0 (which allows no operation) on incompatibility.
@@ -1187,6 +999,217 @@ static psa_status_t psa_remove_key_data_from_memory( psa_key_slot_t *slot )
     }
 
     return( PSA_SUCCESS );
+}
+
+/** Return the size of the key in the given slot, in bits.
+ *
+ * \param[in] slot      A key slot.
+ *
+ * \return The key size in bits, read from the metadata in the slot.
+ */
+static inline size_t psa_get_key_slot_bits( const psa_key_slot_t *slot )
+{
+    return( slot->attr.bits );
+}
+
+/** Check whether the key input is sane according to the PSA Crypto API spec.
+ *
+ * \param[in] slot          A key slot where the key input is to be stored.
+ * \param[in] data          The binary key input to sanity-check.
+ * \param[in] data_length   The length of the binary key input in bytes.
+ * \param[out] bits         The detected key bit size.
+ *
+ * \retval PSA_SUCCESS
+ *         The input key data passes sanity-checking against the key type
+ *         declared in the slot attributes. This is not a guarantee that the key
+ *         is correctly formatted, only that the internal keystore is able to
+ *         store the binary key representation.
+ * \retval PSA_ERROR_NOT_SUPPORTED
+ *         The input key data cannot be stored by the implementation, or fails
+ *         an initial sanity check.
+ */
+static psa_status_t psa_is_key_supported( psa_key_slot_t *slot,
+                                          const uint8_t *data,
+                                          size_t data_length,
+                                          psa_key_bits_t *bits )
+{
+    psa_status_t status = PSA_SUCCESS;
+
+    /* zero-length keys are never supported */
+    if( data_length == 0 )
+        return( PSA_ERROR_NOT_SUPPORTED );
+
+    /* Ensure that the bytes-to-bit conversion doesn't overflow. */
+    if( data_length > SIZE_MAX / 8 )
+        return( PSA_ERROR_NOT_SUPPORTED );
+
+    if( key_type_is_raw_bytes( slot->attr.type ) )
+    {
+        size_t bit_size = PSA_BYTES_TO_BITS( data_length );
+
+        /* Enforce a size limit, and in particular ensure that the bit
+         * size fits in its representation type. */
+        if( bit_size > PSA_MAX_KEY_BITS )
+            return( PSA_ERROR_NOT_SUPPORTED );
+
+        status = validate_unstructured_key_bit_size( slot->attr.type, bit_size );
+
+        if( status == PSA_SUCCESS )
+        {
+            *bits = (psa_key_bits_t) bit_size;
+        }
+    }
+    else if( PSA_KEY_TYPE_IS_ECC_KEY_PAIR( slot->attr.type ) )
+    {
+        /* PSA Crypto API defines the format of an ECC key pair as a
+         * ceiling(m/8)-byte string, where m is the curve size in bits. For
+         * sanity checking, we check whether the data length matches with this
+         * expectation. */
+        status = validate_ecc_key_bit_size( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
+                                            data_length,
+                                            bits );
+#if defined(MBEDTLS_ECP_C)
+        /* For the time being, preserve behaviour of converting to internal
+         * representation on import. This also preserves test suite expectations
+         * of an ECP key being more thoroughly checked (against domain params)
+         * on import, instead of on the first use. */
+        if( status != PSA_SUCCESS )
+            return status;
+
+        status = psa_import_ec_private_key( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
+                                            data, data_length,
+                                            &slot->data.internal_representation.ecp );
+#endif /* defined(MBEDTLS_ECP_C) */
+    }
+    else if( PSA_KEY_TYPE_IS_ECC_PUBLIC_KEY( slot->attr.type ) )
+    {
+        /* PSA Crypto API defines the format of an ECC public key as as the
+         * content of an ECPoint for all curve types except
+         * PSA_ECC_FAMILY_MONTGOMERY. For the latter, the expected public key
+         * format is the binary representation of the public scalar.
+         * For sanity checking, we check whether the data length matches with
+         * these expectations. */
+        if( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ) == PSA_ECC_FAMILY_MONTGOMERY )
+        {
+            status = validate_ecc_key_bit_size( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
+                                                data_length,
+                                                bits );
+        }
+        else
+        {
+            status = validate_ecc_key_bit_size( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
+                                                (data_length - 1) / 2,
+                                                bits );
+        }
+#if defined(MBEDTLS_ECP_C)
+        /* For the time being, preserve behaviour of converting to internal
+         * representation on import. This also preserves test suite expectations
+         * of an ECP key being more thoroughly checked (against domain params)
+         * on import, instead of on the first use. */
+        if( status != PSA_SUCCESS )
+            return status;
+
+        status = psa_import_ec_public_key( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
+                                           data, data_length,
+                                           &slot->data.internal_representation.ecp );
+#endif /* defined(MBEDTLS_ECP_C) */
+    }
+    else if( PSA_KEY_TYPE_IS_RSA( slot->attr.type ) )
+    {
+        /* PSA Crypto API defines the format of an RSA key as a DER-encoded
+         * representation of respectively the non-encrypted PKCS#1 RSAPrivateKey
+         * or the RFC3279 RSAPublicKey for a private key or a public key. That
+         * means we have no other choice then to run an import to verify the key
+         * size. */
+#if defined(MBEDTLS_RSA_C) && defined(MBEDTLS_PK_PARSE_C)
+        status = psa_import_rsa_key( slot->attr.type,
+                                     data, data_length,
+                                     &slot->data.internal_representation.rsa );
+
+        if( status == PSA_SUCCESS )
+        {
+            *bits = (psa_key_bits_t) PSA_BYTES_TO_BITS( mbedtls_rsa_get_len( slot->data.internal_representation.rsa ) );
+        }
+#else
+        /* No drivers have been implemented yet, so without mbed TLS backing
+         * there's no way to do RSA with the current library. */
+        status = PSA_ERROR_NOT_SUPPORTED;
+#endif
+    }
+    else if( PSA_KEY_TYPE_IS_DH( slot->attr.type ) )
+    {
+        /* PSA Crypto API defines the format of an DH key pair as the
+         * representation of the private key x as a big-endian byte string. For
+         * a public key, this is the representation of the public key y as a
+         * big-endian byte string. Both are thus expected to be the same size as
+         * domain parameter p. For sanity checking, we check whether the data
+         * length matches with this expectation. */
+        if( PSA_KEY_TYPE_DH_GET_FAMILY( slot->attr.type ) == PSA_DH_FAMILY_RFC7919 )
+        {
+            switch( data_length )
+            {
+                case PSA_BITS_TO_BYTES(2048):
+                case PSA_BITS_TO_BYTES(3072):
+                case PSA_BITS_TO_BYTES(4096):
+                case PSA_BITS_TO_BYTES(6144):
+                case PSA_BITS_TO_BYTES(8192):
+                    *bits = (psa_key_bits_t) PSA_BYTES_TO_BITS( data_length );
+                    break;
+                default:
+                    status = PSA_ERROR_NOT_SUPPORTED;
+                    break;
+            }
+        }
+        else
+        {
+            status = PSA_ERROR_NOT_SUPPORTED;
+        }
+    }
+    else
+    {
+        /* Unknown key type */
+        return( PSA_ERROR_NOT_SUPPORTED );
+    }
+
+    return( status );
+}
+
+/** Import key data into a slot. `slot->attr.type` must have been set
+ * previously. This function assumes that the slot does not contain
+ * any key material yet. On failure, the slot content is unchanged. */
+psa_status_t psa_import_key_into_slot( psa_key_slot_t *slot,
+                                       const uint8_t *data,
+                                       size_t data_length )
+{
+    psa_key_bits_t bits;
+    psa_status_t status = psa_is_key_supported(slot, data, data_length, &bits);
+
+    if( status != PSA_SUCCESS )
+    {
+        return( status );
+    }
+
+    /* Allocate memory for the key */
+    slot->data.key.bytes = data_length;
+    slot->data.key.data = mbedtls_calloc( 1, slot->data.key.bytes );
+    if( slot->data.key.data == NULL )
+    {
+        /* Free internal representation if any was stored, since the key is now
+         * invalid. */
+        psa_remove_key_data_from_memory( slot );
+        slot->data.key.bytes = 0;
+        return( PSA_ERROR_INSUFFICIENT_MEMORY );
+    }
+
+    /* copy key into allocated buffer */
+    memcpy(slot->data.key.data, data, data_length);
+
+    /* Write the actual key size to the slot.
+     * psa_start_key_creation() wrote the size declared by the
+     * caller, which may be 0 (meaning unspecified) or wrong. */
+    slot->attr.bits = bits;
+
+    return( status );
 }
 
 /** Completely wipe a slot in memory, including its policy.
