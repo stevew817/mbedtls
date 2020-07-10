@@ -54,9 +54,6 @@ typedef struct
          * is to be exercised by a software library, to prevent conversion from
          * having to happen on each operation */
         union {
-#if defined(MBEDTLS_RSA_C)
-            mbedtls_rsa_context *rsa;
-#endif /* defined(MBEDTLS_RSA_C) */
 #if defined(MBEDTLS_ECP_C)
             mbedtls_ecp_keypair *ecp;
 #endif /* defined(MBEDTLS_ECP_C) */
