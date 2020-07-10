@@ -32,9 +32,6 @@
 #include "psa/crypto.h"
 #include "psa/crypto_se_driver.h"
 
-#include "mbedtls/ecp.h"
-#include "mbedtls/rsa.h"
-
 /** The data structure representing a key slot, containing key material
  * and metadata for one key.
  */
@@ -50,14 +47,6 @@ typedef struct
             uint8_t *data;
             size_t bytes;
         } key;
-        /* Dynamically allocated alternate key representation. Used if the key
-         * is to be exercised by a software library, to prevent conversion from
-         * having to happen on each operation */
-        union {
-#if defined(MBEDTLS_ECP_C)
-            mbedtls_ecp_keypair *ecp;
-#endif /* defined(MBEDTLS_ECP_C) */
-        } internal_representation;
 #if defined(MBEDTLS_PSA_CRYPTO_SE_C)
         /* Any key located in a secure element is referenced by slot number */
         struct se

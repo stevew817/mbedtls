@@ -492,75 +492,6 @@ static psa_status_t validate_unstructured_key_bit_size( psa_key_type_t type,
     return( PSA_SUCCESS );
 }
 
-static psa_status_t validate_ecc_key_bit_size( psa_ecc_family_t curve,
-                                               size_t byte_length,
-                                               psa_key_bits_t *bits )
-{
-    /* Check that the bit size is acceptable for the key type */
-    switch( curve )
-    {
-        case PSA_ECC_FAMILY_SECP_R1:
-            switch( byte_length )
-            {
-                case PSA_BITS_TO_BYTES( 192 ):
-                case PSA_BITS_TO_BYTES( 224 ):
-                case PSA_BITS_TO_BYTES( 256 ):
-                case PSA_BITS_TO_BYTES( 384 ):
-                    *bits = (psa_key_bits_t) PSA_BYTES_TO_BITS( byte_length );
-                    return( PSA_SUCCESS );
-                case PSA_BITS_TO_BYTES( 521 ):
-                    *bits = 521;
-                    return( PSA_SUCCESS );
-                default:
-                    return( PSA_ERROR_INVALID_ARGUMENT );
-            }
-            break;
-
-        case PSA_ECC_FAMILY_BRAINPOOL_P_R1:
-            switch( byte_length )
-            {
-                case PSA_BITS_TO_BYTES( 256 ):
-                case PSA_BITS_TO_BYTES( 384 ):
-                case PSA_BITS_TO_BYTES( 512 ):
-                    *bits = (psa_key_bits_t) PSA_BYTES_TO_BITS( byte_length );
-                    return( PSA_SUCCESS );
-                default:
-                    return( PSA_ERROR_INVALID_ARGUMENT );
-            }
-            break;
-
-        case PSA_ECC_FAMILY_MONTGOMERY:
-            switch( byte_length )
-            {
-                case PSA_BITS_TO_BYTES( 255 ):
-                    *bits = 255;
-                    return( PSA_SUCCESS );
-                case PSA_BITS_TO_BYTES( 448 ):
-                    *bits = 448;
-                    return( PSA_SUCCESS );
-                default:
-                    return( PSA_ERROR_INVALID_ARGUMENT );
-            }
-            break;
-
-        case PSA_ECC_FAMILY_SECP_K1:
-            switch( byte_length )
-            {
-                case PSA_BITS_TO_BYTES( 192 ):
-                case PSA_BITS_TO_BYTES( 224 ):
-                case PSA_BITS_TO_BYTES( 256 ):
-                    *bits = (psa_key_bits_t) PSA_BYTES_TO_BITS( byte_length );
-                    return( PSA_SUCCESS );
-                default:
-                    return( PSA_ERROR_INVALID_ARGUMENT );
-            }
-            break;
-
-        default:
-            return( PSA_ERROR_NOT_SUPPORTED );
-    }
-}
-
 #if defined(MBEDTLS_RSA_C) || defined(MBEDTLS_ECP_C)
 static int pk_write_pubkey_simple( mbedtls_pk_context *key,
                                    unsigned char *buf, size_t size )
@@ -600,7 +531,9 @@ static psa_status_t psa_check_rsa_key_byte_aligned(
     return( status );
 }
 
-/* Convert import representation to pk_context containing an RSA key */
+/* Convert import representation to pk_context containing an RSA key.
+ * Note: upon return of PSA_SUCCESS, the caller is responsible for freeing
+ * the PK context object. */
 static psa_status_t psa_load_rsa_representation( const psa_key_slot_t *slot,
                                                  mbedtls_pk_context *ctx )
 {
@@ -739,18 +672,17 @@ exit:
 #endif /* defined(MBEDTLS_RSA_C) && defined(MBEDTLS_PK_PARSE_C) */
 
 #if defined(MBEDTLS_ECP_C)
-static psa_status_t psa_prepare_import_ec_key( psa_ecc_family_t curve,
-                                               size_t data_length,
-                                               int is_public,
-                                               mbedtls_ecp_keypair **p_ecp )
+/* Load the key slot contents into an mbedTLS internal representation object.
+ * Note: caller is responsible for freeing the object properly */
+static psa_status_t psa_load_ecp_representation( const psa_key_slot_t *slot,
+                                                 mbedtls_ecp_keypair *ecp )
 {
     mbedtls_ecp_group_id grp_id = MBEDTLS_ECP_DP_NONE;
-    *p_ecp = mbedtls_calloc( 1, sizeof( mbedtls_ecp_keypair ) );
-    if( *p_ecp == NULL )
-        return( PSA_ERROR_INSUFFICIENT_MEMORY );
-    mbedtls_ecp_keypair_init( *p_ecp );
+    size_t data_length = slot->data.key.bytes;
+    psa_status_t status;
+    mbedtls_ecp_keypair_init( ecp );
 
-    if( is_public )
+    if( PSA_KEY_TYPE_IS_PUBLIC_KEY( slot->attr.type ) )
     {
         /* A public key is represented as:
          * - The byte 0x04;
@@ -758,123 +690,166 @@ static psa_status_t psa_prepare_import_ec_key( psa_ecc_family_t curve,
          * - `y_P` as a `ceiling(m/8)`-byte string, big-endian.
          * So its data length is 2m+1 where n is the key size in bits.
          */
-        if( ( data_length & 1 ) == 0 )
+        if( ( slot->data.key.bytes & 1 ) == 0 )
             return( PSA_ERROR_INVALID_ARGUMENT );
-        data_length = data_length / 2;
+        data_length = slot->data.key.bytes / 2;
     }
 
     /* Load the group. */
-    grp_id = mbedtls_ecc_group_of_psa( curve, data_length );
+    grp_id = mbedtls_ecc_group_of_psa( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type),
+                                       data_length );
     if( grp_id == MBEDTLS_ECP_DP_NONE )
         return( PSA_ERROR_INVALID_ARGUMENT );
-    return( mbedtls_to_psa_error(
-                mbedtls_ecp_group_load( &( *p_ecp )->grp, grp_id ) ) );
-}
-
-/* Import a public key given as the uncompressed representation defined by SEC1
- * 2.3.3 as the content of an ECPoint. */
-static psa_status_t psa_import_ec_public_key( psa_ecc_family_t curve,
-                                              const uint8_t *data,
-                                              size_t data_length,
-                                              mbedtls_ecp_keypair **p_ecp )
-{
-    psa_status_t status = PSA_ERROR_CORRUPTION_DETECTED;
-    mbedtls_ecp_keypair *ecp = NULL;
-
-    status = psa_prepare_import_ec_key( curve, data_length, 1, &ecp );
-    if( status != PSA_SUCCESS )
-        goto exit;
-
-    /* Load the public value. */
     status = mbedtls_to_psa_error(
-        mbedtls_ecp_point_read_binary( &ecp->grp, &ecp->Q,
-                                       data, data_length ) );
+                mbedtls_ecp_group_load( &ecp->grp, grp_id ) );
     if( status != PSA_SUCCESS )
-        goto exit;
+        return( status );
 
-    /* Check that the point is on the curve. */
-    status = mbedtls_to_psa_error(
-        mbedtls_ecp_check_pubkey( &ecp->grp, &ecp->Q ) );
-    if( status != PSA_SUCCESS )
-        goto exit;
-
-    *p_ecp = ecp;
-    return( PSA_SUCCESS );
-
-exit:
-    if( ecp != NULL )
+    /* Load the key material */
+    if( PSA_KEY_TYPE_IS_PUBLIC_KEY( slot->attr.type ) )
     {
-        mbedtls_ecp_keypair_free( ecp );
-        mbedtls_free( ecp );
-    }
-    return( status );
-}
+        /* Load the public value. */
+        status = mbedtls_to_psa_error(
+            mbedtls_ecp_point_read_binary( &ecp->grp, &ecp->Q,
+                                           slot->data.key.data,
+                                           slot->data.key.bytes ) );
+        if( status != PSA_SUCCESS )
+            goto exit;
 
-/* Import a private key given as a byte string which is the private value
- * in big-endian order. */
-static psa_status_t psa_import_ec_private_key( psa_ecc_family_t curve,
-                                               const uint8_t *data,
-                                               size_t data_length,
-                                               mbedtls_ecp_keypair **p_ecp )
-{
-    psa_status_t status = PSA_ERROR_CORRUPTION_DETECTED;
-    mbedtls_ecp_keypair *ecp = NULL;
-
-    status = psa_prepare_import_ec_key( curve, data_length, 0, &ecp );
-    if( status != PSA_SUCCESS )
-        goto exit;
-
-    /* Load and validate the secret key */
-    status = mbedtls_to_psa_error(
-        mbedtls_ecp_read_key( ecp->grp.id, ecp, data, data_length ) );
-    if( status != PSA_SUCCESS )
-        goto exit;
-
-    /* Calculate the public key from the private key. */
-    status = mbedtls_to_psa_error(
-        mbedtls_ecp_mul( &ecp->grp, &ecp->Q, &ecp->d, &ecp->grp.G,
-                         mbedtls_ctr_drbg_random, &global_data.ctr_drbg ) );
-    if( status != PSA_SUCCESS )
-        goto exit;
-
-    *p_ecp = ecp;
-    return( PSA_SUCCESS );
-
-exit:
-    if( ecp != NULL )
-    {
-        mbedtls_ecp_keypair_free( ecp );
-        mbedtls_free( ecp );
-    }
-    return( status );
-}
-
-/* Check whether the internal representation for an ECP key has been loaded
- * already, and attempt to load it if not. */
-static psa_status_t psa_check_ecp_representation_loaded( psa_key_slot_t *slot )
-{
-    if( slot->data.internal_representation.ecp == NULL )
-    {
-        /* Attempt to load from input buffer just-in-time */
-        if( PSA_KEY_TYPE_IS_ECC_KEY_PAIR( slot->attr.type ) )
-        {
-            return( psa_import_ec_private_key( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
-                                               slot->data.key.data, slot->data.key.bytes,
-                                               &slot->data.internal_representation.ecp ) );
-        }
-        else if( PSA_KEY_TYPE_IS_ECC_PUBLIC_KEY( slot->attr.type ) )
-        {
-            return( psa_import_ec_public_key( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
-                                              slot->data.key.data, slot->data.key.bytes,
-                                              &slot->data.internal_representation.ecp ) );
-        }
-        else
-            return( PSA_ERROR_CORRUPTION_DETECTED );
+        /* Check that the point is on the curve. */
+        status = mbedtls_to_psa_error(
+            mbedtls_ecp_check_pubkey( &ecp->grp, &ecp->Q ) );
+        if( status != PSA_SUCCESS )
+            goto exit;
     }
     else
     {
-        return( PSA_SUCCESS );
+        /* Load the secret value. */
+        status = mbedtls_to_psa_error(
+            mbedtls_ecp_read_key( ecp->grp.id,
+                                  ecp,
+                                  slot->data.key.data,
+                                  slot->data.key.bytes ) );
+
+        if( status != PSA_SUCCESS )
+            goto exit;
+        /* Validate the private key. */
+        status = mbedtls_to_psa_error(
+            mbedtls_ecp_check_privkey( &ecp->grp, &ecp->d ) );
+        if( status != PSA_SUCCESS )
+            goto exit;
     }
+exit:
+    if( status != PSA_SUCCESS )
+        mbedtls_ecp_keypair_free( ecp );
+    return status;
+}
+
+static psa_status_t psa_export_ecp_key( psa_key_type_t type,
+                                        mbedtls_ecp_keypair *ecp,
+                                        uint8_t *data,
+                                        size_t data_size,
+                                        size_t *data_length )
+{
+    psa_status_t status;
+
+    if( PSA_KEY_TYPE_IS_PUBLIC_KEY( type ) )
+    {
+        /* Check whether the public part is loaded */
+        if( mbedtls_ecp_is_zero( &ecp->Q ) )
+        {
+            /* Calculate the public key */
+            status = mbedtls_to_psa_error(
+                mbedtls_ecp_mul( &ecp->grp, &ecp->Q, &ecp->d, &ecp->grp.G,
+                                 mbedtls_ctr_drbg_random, &global_data.ctr_drbg ) );
+            if( status != PSA_SUCCESS )
+                return status;
+        }
+
+        return( mbedtls_to_psa_error(
+                    mbedtls_ecp_point_write_binary( &ecp->grp, &ecp->Q,
+                                                    MBEDTLS_ECP_PF_UNCOMPRESSED,
+                                                    data_length,
+                                                    data,
+                                                    data_size ) ) );
+    }
+    else
+    {
+        if( data_size < PSA_BITS_TO_BYTES(ecp->grp.nbits) )
+            return( PSA_ERROR_BUFFER_TOO_SMALL );
+
+        status = mbedtls_to_psa_error(
+                    mbedtls_ecp_write_key( ecp,
+                                           data,
+                                           PSA_BITS_TO_BYTES(ecp->grp.nbits) ) );
+        if( status == PSA_SUCCESS )
+        {
+            *data_length = PSA_BITS_TO_BYTES(ecp->grp.nbits);
+        }
+
+        return( status );
+    }
+}
+
+static psa_status_t psa_import_ecp_key( psa_key_slot_t *slot,
+                                        const uint8_t *data,
+                                        size_t data_length )
+{
+    psa_status_t status;
+    uint8_t* output = NULL;
+    mbedtls_ecp_keypair ecp;
+
+    /* Temporarily load input into slot. The cast here is safe since it'll
+     * only be used for load_ecp_representation, which doesn't modify the
+     * buffer. */
+    slot->data.key.data = (uint8_t *)data;
+    slot->data.key.bytes = data_length;
+
+    /* Parse input */
+    status = psa_load_ecp_representation( slot, &ecp );
+    if( status != PSA_SUCCESS )
+        goto exit;
+
+    if( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ) == PSA_ECC_FAMILY_MONTGOMERY)
+        slot->attr.bits = (psa_key_bits_t) ecp.grp.nbits + 1;
+    else
+        slot->attr.bits = (psa_key_bits_t) ecp.grp.nbits;
+
+    /* Re-export the data to PSA export format. There is currently no support
+     * for other input formats then the export format, so this is a 1-1
+     * copy operation. */
+    output = mbedtls_calloc( 1, data_length );
+
+    if( output == NULL )
+    {
+        status = PSA_ERROR_INSUFFICIENT_MEMORY;
+        goto exit;
+    }
+
+    status = psa_export_ecp_key( slot->attr.type,
+                                 &ecp,
+                                 output,
+                                 data_length,
+                                 &data_length);
+
+exit:
+    /* Always free the PK object (will also free contained RSA context) */
+    mbedtls_ecp_keypair_free( &ecp );
+
+    /* Free the allocated buffer only on error. */
+    if( status != PSA_SUCCESS )
+    {
+        mbedtls_free( output );
+        slot->data.key.data = NULL;
+        slot->data.key.bytes = 0;
+        return( status );
+    }
+
+    /* On success, store the allocated export-formatted key. */
+    slot->data.key.data = output;
+    slot->data.key.bytes = data_length;
+
+    return( PSA_SUCCESS );
 }
 #endif /* defined(MBEDTLS_ECP_C) */
 
@@ -1042,30 +1017,10 @@ static psa_status_t psa_remove_key_data_from_memory( psa_key_slot_t *slot )
     {
         /* No key material to clean. */
     }
-    else if( key_type_is_raw_bytes( slot->attr.type ) )
-    {
-        mbedtls_free( slot->data.key.data );
-        slot->data.key.data = NULL;
-        slot->data.key.bytes = 0;
-    }
-    else if( PSA_KEY_TYPE_IS_RSA( slot->attr.type ) )
-    {
-        mbedtls_free( slot->data.key.data );
-        slot->data.key.data = NULL;
-        slot->data.key.bytes = 0;
-    }
-    else if( PSA_KEY_TYPE_IS_ECC( slot->attr.type ) )
-    {
-#if defined(MBEDTLS_ECP_C)
-        mbedtls_ecp_keypair_free( slot->data.internal_representation.ecp );
-        mbedtls_free( slot->data.internal_representation.ecp );
-        slot->data.internal_representation.ecp = NULL;
-#endif /* defined(MBEDTLS_ECP_C) */
-        mbedtls_free( slot->data.key.data );
-        slot->data.key.data = NULL;
-        slot->data.key.bytes = 0;
-    }
-    else if( PSA_KEY_TYPE_IS_DH( slot->attr.type ) )
+    else if( key_type_is_raw_bytes( slot->attr.type ) ||
+             PSA_KEY_TYPE_IS_RSA( slot->attr.type ) ||
+             PSA_KEY_TYPE_IS_ECC( slot->attr.type ) ||
+             PSA_KEY_TYPE_IS_DH( slot->attr.type ) )
     {
         mbedtls_free( slot->data.key.data );
         slot->data.key.data = NULL;
@@ -1092,26 +1047,12 @@ static inline size_t psa_get_key_slot_bits( const psa_key_slot_t *slot )
     return( slot->attr.bits );
 }
 
-/** Check whether the key input is sane according to the PSA Crypto API spec.
- *
- * \param[in] slot          A key slot where the key input is to be stored.
- * \param[in] data          The binary key input to sanity-check.
- * \param[in] data_length   The length of the binary key input in bytes.
- * \param[out] bits         The detected key bit size.
- *
- * \retval PSA_SUCCESS
- *         The input key data passes sanity-checking against the key type
- *         declared in the slot attributes. This is not a guarantee that the key
- *         is correctly formatted, only that the internal keystore is able to
- *         store the binary key representation.
- * \retval PSA_ERROR_NOT_SUPPORTED
- *         The input key data cannot be stored by the implementation, or fails
- *         an initial sanity check.
- */
-static psa_status_t psa_is_key_supported( psa_key_slot_t *slot,
-                                          const uint8_t *data,
-                                          size_t data_length,
-                                          psa_key_bits_t *bits )
+/** Import key data into a slot. `slot->attr.type` must have been set
+ * previously. This function assumes that the slot does not contain
+ * any key material yet. On failure, the slot content is unchanged. */
+psa_status_t psa_import_key_into_slot( psa_key_slot_t *slot,
+                                       const uint8_t *data,
+                                       size_t data_length )
 {
     psa_status_t status = PSA_SUCCESS;
 
@@ -1133,65 +1074,34 @@ static psa_status_t psa_is_key_supported( psa_key_slot_t *slot,
             return( PSA_ERROR_NOT_SUPPORTED );
 
         status = validate_unstructured_key_bit_size( slot->attr.type, bit_size );
-
-        if( status == PSA_SUCCESS )
-        {
-            *bits = (psa_key_bits_t) bit_size;
-        }
-    }
-    else if( PSA_KEY_TYPE_IS_ECC_KEY_PAIR( slot->attr.type ) )
-    {
-        /* PSA Crypto API defines the format of an ECC key pair as a
-         * ceiling(m/8)-byte string, where m is the curve size in bits. For
-         * sanity checking, we check whether the data length matches with this
-         * expectation. */
-        status = validate_ecc_key_bit_size( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
-                                            data_length,
-                                            bits );
-#if defined(MBEDTLS_ECP_C)
-        /* For the time being, preserve behaviour of converting to internal
-         * representation on import. This also preserves test suite expectations
-         * of an ECP key being more thoroughly checked (against domain params)
-         * on import, instead of on the first use. */
         if( status != PSA_SUCCESS )
             return status;
 
-        status = psa_import_ec_private_key( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
-                                            data, data_length,
-                                            &slot->data.internal_representation.ecp );
-#endif /* defined(MBEDTLS_ECP_C) */
-    }
-    else if( PSA_KEY_TYPE_IS_ECC_PUBLIC_KEY( slot->attr.type ) )
-    {
-        /* PSA Crypto API defines the format of an ECC public key as as the
-         * content of an ECPoint for all curve types except
-         * PSA_ECC_FAMILY_MONTGOMERY. For the latter, the expected public key
-         * format is the binary representation of the public scalar.
-         * For sanity checking, we check whether the data length matches with
-         * these expectations. */
-        if( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ) == PSA_ECC_FAMILY_MONTGOMERY )
+        /* Allocate memory for the key */
+        slot->data.key.data = mbedtls_calloc( 1, data_length );
+        if( slot->data.key.data == NULL )
         {
-            status = validate_ecc_key_bit_size( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
-                                                data_length,
-                                                bits );
+            return( PSA_ERROR_INSUFFICIENT_MEMORY );
         }
-        else
-        {
-            status = validate_ecc_key_bit_size( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
-                                                (data_length - 1) / 2,
-                                                bits );
-        }
-#if defined(MBEDTLS_ECP_C)
-        /* For the time being, preserve behaviour of converting to internal
-         * representation on import. This also preserves test suite expectations
-         * of an ECP key being more thoroughly checked (against domain params)
-         * on import, instead of on the first use. */
-        if( status != PSA_SUCCESS )
-            return status;
+        slot->data.key.bytes = data_length;
 
-        status = psa_import_ec_public_key( PSA_KEY_TYPE_ECC_GET_FAMILY( slot->attr.type ),
-                                           data, data_length,
-                                           &slot->data.internal_representation.ecp );
+        /* copy key into allocated buffer */
+        memcpy(slot->data.key.data, data, data_length);
+
+        /* Write the actual key size to the slot.
+         * psa_start_key_creation() wrote the size declared by the
+         * caller, which may be 0 (meaning unspecified) or wrong. */
+        slot->attr.bits = (psa_key_bits_t) bit_size;
+    }
+    else if( PSA_KEY_TYPE_IS_ECC( slot->attr.type ) )
+    {
+#if defined(MBEDTLS_ECP_C)
+        status = psa_import_ecp_key( slot,
+                                     data, data_length );
+#else
+        /* No drivers have been implemented yet, so without mbed TLS backing
+         * there's no way to do ECP with the current library. */
+        return( PSA_ERROR_NOT_SUPPORTED );
 #endif /* defined(MBEDTLS_ECP_C) */
     }
     else if( PSA_KEY_TYPE_IS_RSA( slot->attr.type ) )
@@ -1227,12 +1137,27 @@ static psa_status_t psa_is_key_supported( psa_key_slot_t *slot,
                 case PSA_BITS_TO_BYTES(4096):
                 case PSA_BITS_TO_BYTES(6144):
                 case PSA_BITS_TO_BYTES(8192):
-                    *bits = (psa_key_bits_t) PSA_BYTES_TO_BITS( data_length );
                     break;
                 default:
                     status = PSA_ERROR_NOT_SUPPORTED;
                     break;
             }
+
+            /* Allocate memory for the key */
+            slot->data.key.bytes = data_length;
+            slot->data.key.data = mbedtls_calloc( 1, slot->data.key.bytes );
+            if( slot->data.key.data == NULL )
+            {
+                return( PSA_ERROR_INSUFFICIENT_MEMORY );
+            }
+
+            /* copy key into allocated buffer */
+            memcpy(slot->data.key.data, data, data_length);
+
+            /* Write the actual key size to the slot.
+             * psa_start_key_creation() wrote the size declared by the
+             * caller, which may be 0 (meaning unspecified) or wrong. */
+            slot->attr.bits = (psa_key_bits_t) PSA_BYTES_TO_BITS( data_length );
         }
         else
         {
@@ -1244,48 +1169,6 @@ static psa_status_t psa_is_key_supported( psa_key_slot_t *slot,
         /* Unknown key type */
         return( PSA_ERROR_NOT_SUPPORTED );
     }
-
-    return( status );
-}
-
-/** Import key data into a slot. `slot->attr.type` must have been set
- * previously. This function assumes that the slot does not contain
- * any key material yet. On failure, the slot content is unchanged. */
-psa_status_t psa_import_key_into_slot( psa_key_slot_t *slot,
-                                       const uint8_t *data,
-                                       size_t data_length )
-{
-    psa_key_bits_t bits;
-    psa_status_t status = psa_is_key_supported(slot, data, data_length, &bits);
-
-    if( status != PSA_SUCCESS )
-    {
-        return( status );
-    }
-
-    /* Converted RSA to take care of its own import */
-    if( PSA_KEY_TYPE_IS_RSA( slot->attr.type ) )
-        return status;
-
-    /* Allocate memory for the key */
-    slot->data.key.bytes = data_length;
-    slot->data.key.data = mbedtls_calloc( 1, slot->data.key.bytes );
-    if( slot->data.key.data == NULL )
-    {
-        /* Free internal representation if any was stored, since the key is now
-         * invalid. */
-        psa_remove_key_data_from_memory( slot );
-        slot->data.key.bytes = 0;
-        return( PSA_ERROR_INSUFFICIENT_MEMORY );
-    }
-
-    /* copy key into allocated buffer */
-    memcpy(slot->data.key.data, data, data_length);
-
-    /* Write the actual key size to the slot.
-     * psa_start_key_creation() wrote the size declared by the
-     * caller, which may be 0 (meaning unspecified) or wrong. */
-    slot->attr.bits = bits;
 
     return( status );
 }
@@ -1630,10 +1513,10 @@ static psa_status_t psa_internal_export_key( psa_key_slot_t *slot,
         /* Need to export the public part of a private key,
          * so conversion is needed */
 #if defined(MBEDTLS_PK_WRITE_C)
-        mbedtls_pk_context pk;
         if( PSA_KEY_TYPE_IS_RSA( slot->attr.type ) )
         {
 #if defined(MBEDTLS_RSA_C)
+            mbedtls_pk_context pk;
             psa_status_t status = psa_load_rsa_representation( slot, &pk );
             if( status != PSA_SUCCESS )
                 return status;
@@ -1655,36 +1538,21 @@ static psa_status_t psa_internal_export_key( psa_key_slot_t *slot,
         else
         {
 #if defined(MBEDTLS_ECP_C)
-            int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
-            psa_status_t status = psa_check_ecp_representation_loaded( slot );
+            mbedtls_ecp_keypair ecp;
+            psa_status_t status = psa_load_ecp_representation( slot, &ecp );
             if( status != PSA_SUCCESS )
                 return status;
-            mbedtls_pk_init( &pk );
-            pk.pk_info = &mbedtls_eckey_info;
-            pk.pk_ctx = slot->data.internal_representation.ecp;
 
-            ret = pk_write_pubkey_simple( &pk, data, data_size );
+            status = psa_export_ecp_key( PSA_KEY_TYPE_ECC_PUBLIC_KEY(
+                                            PSA_KEY_TYPE_ECC_GET_FAMILY(
+                                                slot->attr.type ) ),
+                                         &ecp,
+                                         data,
+                                         data_size,
+                                         data_length );
 
-            if( ret < 0 )
-            {
-                memset( data, 0, data_size );
-                return( mbedtls_to_psa_error( ret ) );
-            }
-            /* The mbedtls_pk_xxx functions write to the end of the buffer.
-             * Move the data to the beginning and erase remaining data
-             * at the original location. */
-            if( 2 * (size_t) ret <= data_size )
-            {
-                memcpy( data, data + data_size - ret, ret );
-                memset( data + data_size - ret, 0, ret );
-            }
-            else if( (size_t) ret < data_size )
-            {
-                memmove( data, data + data_size - ret, ret );
-                memset( data + ret, 0, data_size - ret );
-            }
-            *data_length = ret;
-            return( PSA_SUCCESS );
+            mbedtls_ecp_keypair_free( &ecp );
+            return( status );
 #else
             /* We don't know how to convert a private ECC key to public */
             return( PSA_ERROR_NOT_SUPPORTED );
@@ -3682,6 +3550,15 @@ static psa_status_t psa_ecdsa_verify( mbedtls_ecp_keypair *ecp,
                                               signature + curve_bytes,
                                               curve_bytes ) );
 
+    /* Check whether the public part is loaded */
+    if( mbedtls_ecp_is_zero( &ecp->Q ) )
+    {
+        /* Calculate the public key */
+        MBEDTLS_MPI_CHK(
+            mbedtls_ecp_mul( &ecp->grp, &ecp->Q, &ecp->d, &ecp->grp.G,
+                             mbedtls_ctr_drbg_random, &global_data.ctr_drbg ) );
+    }
+
     ret = mbedtls_ecdsa_verify( &ecp->grp, hash, hash_length,
                                 &ecp->Q, &r, &s );
 
@@ -3773,14 +3650,16 @@ psa_status_t psa_sign_hash( psa_key_handle_t handle,
 #endif
             )
         {
-            status = psa_check_ecp_representation_loaded( slot );
+            mbedtls_ecp_keypair ecp;
+            status = psa_load_ecp_representation( slot, &ecp );
             if( status != PSA_SUCCESS )
                 goto exit;
-            status = psa_ecdsa_sign( slot->data.internal_representation.ecp,
+            status = psa_ecdsa_sign( &ecp,
                                      alg,
                                      hash, hash_length,
                                      signature, signature_size,
                                      signature_length );
+            mbedtls_ecp_keypair_free( &ecp );
         }
         else
 #endif /* defined(MBEDTLS_ECDSA_C) */
@@ -3864,12 +3743,15 @@ psa_status_t psa_verify_hash( psa_key_handle_t handle,
 #if defined(MBEDTLS_ECDSA_C)
         if( PSA_ALG_IS_ECDSA( alg ) )
         {
-            status = psa_check_ecp_representation_loaded( slot );
+            mbedtls_ecp_keypair ecp;
+            status = psa_load_ecp_representation( slot, &ecp );
             if( status != PSA_SUCCESS )
                 return status;
-            return( psa_ecdsa_verify( slot->data.internal_representation.ecp,
-                                      hash, hash_length,
-                                      signature, signature_length ) );
+            status = psa_ecdsa_verify( &ecp,
+                                       hash, hash_length,
+                                       signature, signature_length );
+            mbedtls_ecp_keypair_free( &ecp );
+            return status;
         }
         else
 #endif /* defined(MBEDTLS_ECDSA_C) */
@@ -5617,21 +5499,26 @@ static psa_status_t psa_key_agreement_ecdh( const uint8_t *peer_key,
                                             size_t shared_secret_size,
                                             size_t *shared_secret_length )
 {
-    mbedtls_ecp_keypair *their_key = NULL;
+    mbedtls_ecp_keypair their_key;
+    psa_key_slot_t their_key_slot;
     mbedtls_ecdh_context ecdh;
     psa_status_t status;
     size_t bits = 0;
     psa_ecc_family_t curve = mbedtls_ecc_group_to_psa( our_key->grp.id, &bits );
     mbedtls_ecdh_init( &ecdh );
+    memset(&their_key_slot, 0, sizeof(their_key_slot));
 
-    status = psa_import_ec_public_key( curve,
-                                       peer_key, peer_key_length,
-                                       &their_key );
+    /* Creating ephemeral key slot for import purposes */
+    their_key_slot.attr.type = PSA_KEY_TYPE_ECC_PUBLIC_KEY(curve);
+    their_key_slot.data.key.data = (uint8_t*) peer_key;
+    their_key_slot.data.key.bytes = peer_key_length;
+
+    status = psa_load_ecp_representation( &their_key_slot, &their_key );
     if( status != PSA_SUCCESS )
         goto exit;
 
     status = mbedtls_to_psa_error(
-        mbedtls_ecdh_get_params( &ecdh, their_key, MBEDTLS_ECDH_THEIRS ) );
+        mbedtls_ecdh_get_params( &ecdh, &their_key, MBEDTLS_ECDH_THEIRS ) );
     if( status != PSA_SUCCESS )
         goto exit;
     status = mbedtls_to_psa_error(
@@ -5654,8 +5541,7 @@ exit:
     if( status != PSA_SUCCESS )
         mbedtls_platform_zeroize( shared_secret, shared_secret_size );
     mbedtls_ecdh_free( &ecdh );
-    mbedtls_ecp_keypair_free( their_key );
-    mbedtls_free( their_key );
+    mbedtls_ecp_keypair_free( &their_key );
     return( status );
 }
 #endif /* MBEDTLS_ECDH_C */
@@ -5676,13 +5562,16 @@ static psa_status_t psa_key_agreement_raw_internal( psa_algorithm_t alg,
         case PSA_ALG_ECDH:
             if( ! PSA_KEY_TYPE_IS_ECC_KEY_PAIR( private_key->attr.type ) )
                 return( PSA_ERROR_INVALID_ARGUMENT );
-            psa_status_t status = psa_check_ecp_representation_loaded( private_key );
+            mbedtls_ecp_keypair ecp;
+            psa_status_t status = psa_load_ecp_representation( private_key, &ecp );
             if( status != PSA_SUCCESS )
                 return status;
-            return( psa_key_agreement_ecdh( peer_key, peer_key_length,
-                                            private_key->data.internal_representation.ecp,
-                                            shared_secret, shared_secret_size,
-                                            shared_secret_length ) );
+            status = psa_key_agreement_ecdh( peer_key, peer_key_length,
+                                             &ecp,
+                                             shared_secret, shared_secret_size,
+                                             shared_secret_length );
+            mbedtls_ecp_keypair_free( &ecp );
+            return status;
 #endif /* MBEDTLS_ECDH_C */
         default:
             (void) private_key;
@@ -5900,7 +5789,7 @@ static psa_status_t psa_generate_key_internal(
         if( status != PSA_SUCCESS )
             return( status );
 
-        slot->attr.bits = bits;
+        slot->attr.bits = (psa_key_bits_t) bits;
 #if defined(MBEDTLS_DES_C)
         if( type == PSA_KEY_TYPE_DES )
             psa_des_set_key_parity( slot->data.key.data,
@@ -5934,10 +5823,7 @@ static psa_status_t psa_generate_key_internal(
                                    (unsigned int) bits,
                                    exponent );
         if( ret != 0 )
-        {
-            psa_remove_key_data_from_memory( slot );
             return( mbedtls_to_psa_error( ret ) );
-        }
 
         /* Make sure to always have an export representation available */
         mbedtls_pk_context pk;
@@ -5993,7 +5879,7 @@ static psa_status_t psa_generate_key_internal(
             mbedtls_ecc_group_of_psa( curve, PSA_BITS_TO_BYTES( bits ) );
         const mbedtls_ecp_curve_info *curve_info =
             mbedtls_ecp_curve_info_from_grp_id( grp_id );
-        mbedtls_ecp_keypair *ecp;
+        mbedtls_ecp_keypair ecp;
         int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
         if( domain_parameters_size != 0 )
             return( PSA_ERROR_NOT_SUPPORTED );
@@ -6001,31 +5887,30 @@ static psa_status_t psa_generate_key_internal(
             return( PSA_ERROR_NOT_SUPPORTED );
         if( curve_info->bit_size != bits )
             return( PSA_ERROR_INVALID_ARGUMENT );
-        ecp = mbedtls_calloc( 1, sizeof( *ecp ) );
-        if( ecp == NULL )
-            return( PSA_ERROR_INSUFFICIENT_MEMORY );
-        mbedtls_ecp_keypair_init( ecp );
-        ret = mbedtls_ecp_gen_key( grp_id, ecp,
+        mbedtls_ecp_keypair_init( &ecp );
+        ret = mbedtls_ecp_gen_key( grp_id, &ecp,
                                    mbedtls_ctr_drbg_random,
                                    &global_data.ctr_drbg );
         if( ret != 0 )
         {
-            psa_remove_key_data_from_memory( slot );
+            mbedtls_ecp_keypair_free( &ecp );
             return( mbedtls_to_psa_error( ret ) );
         }
-        slot->data.internal_representation.ecp = ecp;
+
 
         /* Make sure to always have an export representation available */
         size_t bytes = PSA_BITS_TO_BYTES( bits );
         slot->data.key.data = mbedtls_calloc( 1, bytes );
         if( slot->data.key.data == NULL )
         {
-            psa_remove_key_data_from_memory( slot );
+            mbedtls_ecp_keypair_free( &ecp );
             return( PSA_ERROR_INSUFFICIENT_MEMORY );
         }
         slot->data.key.bytes = bytes;
         psa_status_t status = mbedtls_to_psa_error(
-            mbedtls_mpi_write_binary( &ecp->d, slot->data.key.data, bytes ) );
+            mbedtls_ecp_write_key( &ecp, slot->data.key.data, bytes ) );
+
+        mbedtls_ecp_keypair_free( &ecp );
         if( status != PSA_SUCCESS )
         {
             psa_remove_key_data_from_memory( slot );
