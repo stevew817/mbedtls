@@ -492,23 +492,9 @@ static psa_status_t validate_unstructured_key_bit_size( psa_key_type_t type,
     return( PSA_SUCCESS );
 }
 
-#if defined(MBEDTLS_RSA_C) || defined(MBEDTLS_ECP_C)
-static int pk_write_pubkey_simple( mbedtls_pk_context *key,
-                                   unsigned char *buf, size_t size )
-{
-    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
-    unsigned char *c;
-    size_t len = 0;
+#if defined(MBEDTLS_RSA_C)
 
-    c = buf + size;
-
-    MBEDTLS_ASN1_CHK_ADD( len, mbedtls_pk_write_pubkey( &c, buf, key ) );
-
-    return( (int) len );
-}
-#endif /* defined(MBEDTLS_RSA_C) || defined(MBEDTLS_ECP_C) */
-
-#if defined(MBEDTLS_RSA_C) && defined(MBEDTLS_PK_PARSE_C)
+#if defined(MBEDTLS_PK_PARSE_C)
 /* Mbed TLS doesn't support non-byte-aligned key sizes (i.e. key sizes
  * that are not a multiple of 8) well. For example, there is only
  * mbedtls_rsa_get_len(), which returns a number of bytes, and no
@@ -530,6 +516,7 @@ static psa_status_t psa_check_rsa_key_byte_aligned(
     mbedtls_mpi_free( &n );
     return( status );
 }
+#endif /* MBEDTLS_PK_PARSE_C */
 
 /* Convert import representation to pk_context containing an RSA key.
  * Note: upon return of PSA_SUCCESS, the caller is responsible for freeing
@@ -537,6 +524,7 @@ static psa_status_t psa_check_rsa_key_byte_aligned(
 static psa_status_t psa_load_rsa_representation( const psa_key_slot_t *slot,
                                                  mbedtls_pk_context *ctx )
 {
+#if defined(MBEDTLS_PK_PARSE_C)
     psa_status_t status;
     size_t bits;
     mbedtls_pk_init( ctx );
@@ -576,6 +564,11 @@ exit:
         mbedtls_pk_free( ctx );
 
     return( status );
+#else
+    (void) slot;
+    (void) ctx;
+    return( PSA_ERROR_NOT_SUPPORTED );
+#endif /* MBEDTLS_PK_PARSE_C */
 }
 
 static psa_status_t psa_export_rsa_key( psa_key_type_t type,
@@ -584,12 +577,17 @@ static psa_status_t psa_export_rsa_key( psa_key_type_t type,
                                         size_t data_size,
                                         size_t *data_length )
 {
+#if defined(MBEDTLS_PK_WRITE_C)
     int ret;
+    uint8_t *pos = data + data_size;
 
+    /* PSA Crypto API defines the format of an RSA key as a DER-encoded
+     * representation of respectively the non-encrypted PKCS#1 RSAPrivateKey
+     * or the RFC3279 RSAPublicKey for a private key or a public key. */
     if( PSA_KEY_TYPE_IS_KEY_PAIR( type ) )
         ret = mbedtls_pk_write_key_der( pk, data, data_size );
     else
-        ret = pk_write_pubkey_simple( pk, data, data_size );
+        ret = mbedtls_pk_write_pubkey( &pos, data, pk );
 
     if( ret < 0 )
         return mbedtls_to_psa_error( ret );
@@ -610,6 +608,14 @@ static psa_status_t psa_export_rsa_key( psa_key_type_t type,
 
     *data_length = ret;
     return( PSA_SUCCESS );
+#else
+    (void) type;
+    (void) pk;
+    (void) data;
+    (void) data_size;
+    (void) data_length;
+    return( PSA_ERROR_NOT_SUPPORTED );
+#endif /* MBEDTLS_PK_WRITE_C */
 }
 
 static psa_status_t psa_import_rsa_key( psa_key_slot_t *slot,
@@ -644,6 +650,11 @@ static psa_status_t psa_import_rsa_key( psa_key_slot_t *slot,
         goto exit;
     }
 
+    /* PSA Crypto API defines the format of an RSA key as a DER-encoded
+     * representation of respectively the non-encrypted PKCS#1 RSAPrivateKey
+     * or the RFC3279 RSAPublicKey for a private key or a public key. That
+     * means we have no other choice then to run an import to verify the key
+     * size. */
     status = psa_export_rsa_key( slot->attr.type,
                                  &pk,
                                  output,
@@ -669,7 +680,7 @@ exit:
 
     return( PSA_SUCCESS );
 }
-#endif /* defined(MBEDTLS_RSA_C) && defined(MBEDTLS_PK_PARSE_C) */
+#endif /* defined(MBEDTLS_RSA_C) */
 
 #if defined(MBEDTLS_ECP_C)
 /* Load the key slot contents into an mbedTLS internal representation object.
@@ -1106,19 +1117,14 @@ psa_status_t psa_import_key_into_slot( psa_key_slot_t *slot,
     }
     else if( PSA_KEY_TYPE_IS_RSA( slot->attr.type ) )
     {
-        /* PSA Crypto API defines the format of an RSA key as a DER-encoded
-         * representation of respectively the non-encrypted PKCS#1 RSAPrivateKey
-         * or the RFC3279 RSAPublicKey for a private key or a public key. That
-         * means we have no other choice then to run an import to verify the key
-         * size. */
-#if defined(MBEDTLS_RSA_C) && defined(MBEDTLS_PK_PARSE_C)
+#if defined(MBEDTLS_RSA_C)
         status = psa_import_rsa_key( slot,
                                      data, data_length );
 #else
         /* No drivers have been implemented yet, so without mbed TLS backing
          * there's no way to do RSA with the current library. */
         status = PSA_ERROR_NOT_SUPPORTED;
-#endif
+#endif /* defined(MBEDTLS_RSA_C) */
     }
     else if( PSA_KEY_TYPE_IS_DH( slot->attr.type ) )
     {
@@ -1414,7 +1420,7 @@ psa_status_t psa_get_key_attributes( psa_key_handle_t handle,
                 mbedtls_pk_free( &pk );
             }
             break;
-#endif /* MBEDTLS_RSA_C */
+#endif /* defined(MBEDTLS_RSA_C) */
         default:
             /* Nothing else to do. */
             break;
@@ -1512,7 +1518,6 @@ static psa_status_t psa_internal_export_key( psa_key_slot_t *slot,
         }
         /* Need to export the public part of a private key,
          * so conversion is needed */
-#if defined(MBEDTLS_PK_WRITE_C)
         if( PSA_KEY_TYPE_IS_RSA( slot->attr.type ) )
         {
 #if defined(MBEDTLS_RSA_C)
@@ -1558,10 +1563,6 @@ static psa_status_t psa_internal_export_key( psa_key_slot_t *slot,
             return( PSA_ERROR_NOT_SUPPORTED );
 #endif
         }
-#else /* defined(MBEDTLS_PK_WRITE_C) */
-        /* We don't know how to format a public key output */
-        return( PSA_ERROR_NOT_SUPPORTED );
-#endif /* defined(MBEDTLS_PK_WRITE_C) */
     }
     else
     {
@@ -5798,7 +5799,7 @@ static psa_status_t psa_generate_key_internal(
     }
     else
 
-#if defined(MBEDTLS_RSA_C) && defined(MBEDTLS_GENPRIME) && defined(MBEDTLS_PK_WRITE_C)
+#if defined(MBEDTLS_RSA_C) && defined(MBEDTLS_GENPRIME)
     if ( type == PSA_KEY_TYPE_RSA_KEY_PAIR )
     {
         mbedtls_rsa_context rsa;
