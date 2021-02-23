@@ -372,6 +372,12 @@ static int exercise_mac_key( mbedtls_svc_key_id_t key,
     unsigned char mac[PSA_MAC_MAX_SIZE] = {0};
     size_t mac_length = sizeof( mac );
 
+    /* Convert wildcard algorithm to exercisable algorithm */
+    if( alg & PSA_ALG_MAC_AT_LEAST_THIS_LENGTH_FLAG )
+    {
+        alg = PSA_ALG_TRUNCATED_MAC( alg, PSA_MAC_TRUNCATED_LENGTH( alg ) );
+    }
+
     if( usage & PSA_KEY_USAGE_SIGN_HASH )
     {
         PSA_ASSERT( psa_mac_sign_setup( &operation, key, alg ) );
@@ -485,6 +491,12 @@ static int exercise_aead_key( mbedtls_svc_key_id_t key,
     unsigned char ciphertext[48] = "(wabblewebblewibblewobblewubble)";
     size_t ciphertext_length = sizeof( ciphertext );
     size_t plaintext_length = sizeof( ciphertext );
+
+    /* Convert wildcard algorithm to exercisable algorithm */
+    if( alg & PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG )
+    {
+        alg = PSA_ALG_AEAD_WITH_SHORTENED_TAG( alg, PSA_ALG_AEAD_GET_TAG_LENGTH( alg ) );
+    }
 
     /* Default IV length for AES-GCM is 12 bytes */
     if( PSA_ALG_AEAD_WITH_SHORTENED_TAG( alg, 0 ) ==
@@ -2357,19 +2369,6 @@ void copy_success( int source_usage_arg,
                                     material->len, &length ) );
         ASSERT_COMPARE( material->x, material->len,
                         export_buffer, length );
-    }
-
-    /* Convert wildcard algorithm to exercisable algorithm */
-    if( PSA_ALG_IS_WILDCARD( expected_alg ) )
-    {
-      if( PSA_ALG_IS_MAC( expected_alg ) )
-        expected_alg = PSA_ALG_TRUNCATED_MAC(
-                        expected_alg,
-                        PSA_MAC_TRUNCATED_LENGTH( expected_alg ) );
-      if( PSA_ALG_IS_AEAD( expected_alg ) )
-        expected_alg = PSA_ALG_AEAD_WITH_SHORTENED_TAG(
-                        expected_alg,
-                        PSA_ALG_AEAD_GET_TAG_LENGTH( expected_alg ) );
     }
 
     if( ! exercise_key( target_key, expected_usage, expected_alg ) )
