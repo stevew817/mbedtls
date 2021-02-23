@@ -115,6 +115,8 @@ WITHOUT_SYSTEMATIC_DEPENDENCIES = frozenset([
     'PSA_KEY_TYPE_NONE', # always supported
     'PSA_KEY_TYPE_DERIVE', # always supported
     'PSA_KEY_TYPE_RAW_DATA', # always supported
+    'PSA_ALG_AT_LEAST_THIS_LENGTH_MAC', #only a modifier
+    'PSA_ALG_AEAD_WITH_AT_LEAST_THIS_LENGTH_TAG', #only a modifier
 
     # Not implemented yet: cipher-related key types and algorithms.
     # Manually extracted from crypto_values.h.
