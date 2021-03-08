@@ -31,40 +31,49 @@
 
 /* Use builtin defines specific to this compilation unit, since the test driver
  * relies on the software driver. */
-#if( defined(MBEDTLS_PSA_BUILTIN_ALG_MD2) || \
-    ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_MD2) ) )
+#if ( defined(MBEDTLS_PSA_BUILTIN_ALG_MD2) || \
+      ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_MD2) ) ) && \
+    defined(MBEDTLS_MD2_C)
 #define BUILTIN_ALG_MD2         1
 #endif
-#if( defined(MBEDTLS_PSA_BUILTIN_ALG_MD4) || \
-    ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_MD4) ) )
+#if ( defined(MBEDTLS_PSA_BUILTIN_ALG_MD4) || \
+      ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_MD4) ) ) && \
+    defined(MBEDTLS_MD4_C)
 #define BUILTIN_ALG_MD4         1
 #endif
-#if( defined(MBEDTLS_PSA_BUILTIN_ALG_MD5) || \
-    ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_MD5) ) )
+#if ( defined(MBEDTLS_PSA_BUILTIN_ALG_MD5) || \
+      ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_MD5) ) ) && \
+    defined(MBEDTLS_MD5_C)
 #define BUILTIN_ALG_MD5         1
 #endif
-#if( defined(MBEDTLS_PSA_BUILTIN_ALG_RIPEMD160) || \
-    ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_RIPEMD160) ) )
+#if ( defined(MBEDTLS_PSA_BUILTIN_ALG_RIPEMD160) || \
+      ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_RIPEMD160) ) ) && \
+    defined(MBEDTLS_RIPEMD160_C)
 #define BUILTIN_ALG_RIPEMD160   1
 #endif
-#if( defined(MBEDTLS_PSA_BUILTIN_ALG_SHA_1) || \
-    ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_SHA_1) ) )
+#if ( defined(MBEDTLS_PSA_BUILTIN_ALG_SHA_1) || \
+      ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_SHA_1) ) ) && \
+    defined(MBEDTLS_SHA1_C)
 #define BUILTIN_ALG_SHA_1       1
 #endif
-#if( defined(MBEDTLS_PSA_BUILTIN_ALG_SHA_224) || \
-    ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_SHA_224) ) )
+#if ( defined(MBEDTLS_PSA_BUILTIN_ALG_SHA_224) || \
+      ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_SHA_224) ) ) && \
+    defined(MBEDTLS_SHA256_C)
 #define BUILTIN_ALG_SHA_224     1
 #endif
-#if( defined(MBEDTLS_PSA_BUILTIN_ALG_SHA_256) || \
-    ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_SHA_256) ) )
+#if ( defined(MBEDTLS_PSA_BUILTIN_ALG_SHA_256) || \
+      ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_SHA_256) ) ) && \
+    defined(MBEDTLS_SHA256_C)
 #define BUILTIN_ALG_SHA_256     1
 #endif
-#if( defined(MBEDTLS_PSA_BUILTIN_ALG_SHA_384) || \
-    ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_SHA_384) ) )
+#if ( defined(MBEDTLS_PSA_BUILTIN_ALG_SHA_384) || \
+      ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_SHA_384) ) ) && \
+    defined(MBEDTLS_SHA512_C)
 #define BUILTIN_ALG_SHA_384     1
 #endif
-#if( defined(MBEDTLS_PSA_BUILTIN_ALG_SHA_512) || \
-    ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_SHA_512) ) )
+#if ( defined(MBEDTLS_PSA_BUILTIN_ALG_SHA_512) || \
+      ( defined(PSA_CRYPTO_DRIVER_TEST) && defined(MBEDTLS_PSA_ACCEL_ALG_SHA_512) ) ) && \
+    defined(MBEDTLS_SHA512_C)
 #define BUILTIN_ALG_SHA_512     1
 #endif
 
