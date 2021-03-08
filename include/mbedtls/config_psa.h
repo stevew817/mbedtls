@@ -355,6 +355,42 @@ extern "C" {
 #endif /* PSA_WANT_KEY_TYPE_CHACHA20 */
 #endif /* PSA_WANT_ALG_CHACHA20_POLY1305 */
 
+/*
+ * Because of the internals, some _BUILTIN_ macros need to be set based on
+ * a combination of previous declarations.
+ */
+
+/* Builtin deterministic ECDSA and RSA both depend on builtin hash functionality.
+ * Therefore, declare the builtin hash algorithms when they're present. */
+#if defined(MBEDTLS_PSA_BUILTIN_ALG_RSA_PKCS1V15_SIGN) || \
+    defined(MBEDTLS_PSA_BUILTIN_ALG_RSA_OAEP) || \
+    defined(MBEDTLS_PSA_BUILTIN_ALG_RSA_PSS) || \
+    defined(MBEDTLS_PSA_BUILTIN_ALG_DETERMINISTIC_ECDSA)
+#if defined(MBEDTLS_MD2_C)
+#define MBEDTLS_PSA_BUILTIN_ALG_MD2 1
+#endif
+#if defined(MBEDTLS_MD4_C)
+#define MBEDTLS_PSA_BUILTIN_ALG_MD4 1
+#endif
+#if defined(MBEDTLS_MD5_C)
+#define MBEDTLS_PSA_BUILTIN_ALG_MD5 1
+#endif
+#if defined(MBEDTLS_RIPEMD160_C)
+#define MBEDTLS_PSA_BUILTIN_ALG_RIPEMD160 1
+#endif
+#if defined(MBEDTLS_SHA1_C)
+#define MBEDTLS_PSA_BUILTIN_ALG_SHA_1 1
+#endif
+#if defined(MBEDTLS_SHA256_C)
+#define MBEDTLS_PSA_BUILTIN_ALG_SHA_224 1
+#define MBEDTLS_PSA_BUILTIN_ALG_SHA_256 1
+#endif
+#if defined(MBEDTLS_SHA512_C)
+#define MBEDTLS_PSA_BUILTIN_ALG_SHA_384 1
+#define MBEDTLS_PSA_BUILTIN_ALG_SHA_512 1
+#endif
+#endif /* Builtin algorithms relying on builtin hashes */
+
 #else /* MBEDTLS_PSA_CRYPTO_CONFIG */
 
 /*
