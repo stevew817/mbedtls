@@ -520,7 +520,6 @@ exit:
 }
 #endif /* INCLUDE_HASH_CORE */
 
-#if defined(INCLUDE_HASH_MBEDTLS_DRIVER)
 psa_status_t mbedtls_psa_hash_compute(
     psa_algorithm_t alg,
     const uint8_t *input,
@@ -529,22 +528,44 @@ psa_status_t mbedtls_psa_hash_compute(
     size_t hash_size,
     size_t *hash_length)
 {
+#if defined(INCLUDE_HASH_MBEDTLS_DRIVER)
     return( hash_compute( alg, input, input_length,
                           hash, hash_size, hash_length ) );
+#else
+    (void) alg;
+    (void) input;
+    (void) input_length;
+    (void) hash;
+    (void) hash_size;
+    (void) hash_length;
+    return( PSA_ERROR_NOT_SUPPORTED );
+#endif
 }
 
 psa_status_t mbedtls_psa_hash_setup(
     mbedtls_psa_hash_operation_t *operation,
     psa_algorithm_t alg )
 {
+#if defined(INCLUDE_HASH_MBEDTLS_DRIVER)
     return( hash_setup( operation, alg ) );
+#else
+    (void) alg;
+    (void) operation;
+    return( PSA_ERROR_NOT_SUPPORTED );
+#endif
 }
 
 psa_status_t mbedtls_psa_hash_clone(
     const mbedtls_psa_hash_operation_t *source_operation,
     mbedtls_psa_hash_operation_t *target_operation )
 {
+#if defined(INCLUDE_HASH_MBEDTLS_DRIVER)
     return( hash_clone( source_operation, target_operation ) );
+#else
+    (void) source_operation;
+    (void) target_operation;
+    return( PSA_ERROR_NOT_SUPPORTED );
+#endif
 }
 
 psa_status_t mbedtls_psa_hash_update(
@@ -552,7 +573,14 @@ psa_status_t mbedtls_psa_hash_update(
     const uint8_t *input,
     size_t input_length )
 {
+#if defined(INCLUDE_HASH_MBEDTLS_DRIVER)
     return( hash_update( operation, input, input_length ) );
+#else
+    (void) operation;
+    (void) input;
+    (void) input_length;
+    return( PSA_ERROR_NOT_SUPPORTED );
+#endif
 }
 
 psa_status_t mbedtls_psa_hash_finish(
@@ -561,15 +589,27 @@ psa_status_t mbedtls_psa_hash_finish(
     size_t hash_size,
     size_t *hash_length )
 {
+#if defined(INCLUDE_HASH_MBEDTLS_DRIVER)
     return( hash_finish( operation, hash, hash_size, hash_length ) );
+#else
+    (void) operation;
+    (void) hash;
+    (void) hash_size;
+    (void) hash_length;
+    return( PSA_ERROR_NOT_SUPPORTED );
+#endif
 }
 
 psa_status_t mbedtls_psa_hash_abort(
     mbedtls_psa_hash_operation_t *operation )
 {
+#if defined(INCLUDE_HASH_MBEDTLS_DRIVER)
     return( hash_abort( operation ) );
+#else
+    (void) operation;
+    return( PSA_ERROR_NOT_SUPPORTED );
+#endif
 }
-#endif /* INCLUDE_HASH_MBEDTLS_DRIVER */
 
  /*
   * BEYOND THIS POINT, TEST DRIVER ENTRY POINTS ONLY.
