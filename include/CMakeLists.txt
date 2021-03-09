@@ -4,6 +4,7 @@ if(INSTALL_MBEDTLS_HEADERS)
 
     file(GLOB headers "mbedtls/*.h")
     file(GLOB psa_headers "psa/*.h")
+    file(GLOB psa_driver_headers "psa/drivers/*.h")
 
     install(FILES ${headers}
         DESTINATION include/mbedtls
@@ -11,6 +12,10 @@ if(INSTALL_MBEDTLS_HEADERS)
 
     install(FILES ${psa_headers}
         DESTINATION include/psa
+        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+
+    install(FILES ${psa_driver_headers}
+        DESTINATION include/psa/drivers
         PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 
 endif(INSTALL_MBEDTLS_HEADERS)

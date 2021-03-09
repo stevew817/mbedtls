@@ -225,6 +225,7 @@
     <ClInclude Include="..\..\include\psa\crypto_compat.h" />
     <ClInclude Include="..\..\include\psa\crypto_config.h" />
     <ClInclude Include="..\..\include\psa\crypto_driver_common.h" />
+    <ClInclude Include="..\..\include\psa\crypto_driver_contexts.h" />
     <ClInclude Include="..\..\include\psa\crypto_extra.h" />
     <ClInclude Include="..\..\include\psa\crypto_platform.h" />
     <ClInclude Include="..\..\include\psa\crypto_se_driver.h" />
@@ -248,7 +249,6 @@
     <ClInclude Include="..\..\library\common.h" />
     <ClInclude Include="..\..\library\psa_crypto_core.h" />
     <ClInclude Include="..\..\library\psa_crypto_driver_wrappers.h" />
-    <ClInclude Include="..\..\library\psa_crypto_driver_wrappers_contexts.h" />
     <ClInclude Include="..\..\library\psa_crypto_ecp.h" />
     <ClInclude Include="..\..\library\psa_crypto_hash.h" />
     <ClInclude Include="..\..\library\psa_crypto_invasive.h" />

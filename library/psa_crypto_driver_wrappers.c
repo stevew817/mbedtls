@@ -20,8 +20,9 @@
  */
 
 #include "psa_crypto_core.h"
-#include "psa_crypto_driver_wrappers.h"
 #include "mbedtls/platform.h"
+
+#include "psa_crypto_driver_wrappers.h"
 
 #if defined(MBEDTLS_PSA_CRYPTO_DRIVERS)
 
@@ -37,6 +38,9 @@
 #endif /* PSA_CRYPTO_DRIVER_TEST */
 
 /* Repeat above block for each JSON-declared driver during autogeneration */
+
+/* Include headers for builtin drivers' function signatures */
+#include "psa_crypto_hash.h"
 
 /* Auto-generated values depending on which drivers are registered.
  * ID 0 is reserved for unallocated operations.
