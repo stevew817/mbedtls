@@ -36,6 +36,7 @@ my $vsx_sln_file = "$vsx_dir/mbedTLS.sln";
 my $programs_dir = 'programs';
 my $mbedtls_header_dir = 'include/mbedtls';
 my $psa_header_dir = 'include/psa';
+my $psa_driver_header_dir = 'include/psa/drivers';
 my $source_dir = 'library';
 my $test_source_dir = 'tests/src';
 my $test_header_dir = 'tests/include/test';
@@ -114,6 +115,7 @@ sub check_dirs {
     return -d $vsx_dir
         && -d $mbedtls_header_dir
         && -d $psa_header_dir
+        && -d $psa_driver_header_dir
         && -d $source_dir
         && -d $test_source_dir
         && -d $test_header_dir
@@ -266,6 +268,7 @@ sub main {
     my @header_dirs = (
                        $mbedtls_header_dir,
                        $psa_header_dir,
+                       $psa_driver_header_dir,
                        $test_header_dir,
                        $test_drivers_header_dir,
                        $source_dir,
