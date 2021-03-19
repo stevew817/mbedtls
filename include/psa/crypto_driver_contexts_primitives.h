@@ -49,7 +49,7 @@
  * of both this file and the content of psa_crypto_driver_wrappers.c */
 
 typedef union {
-    unsigned dummy; /* Make sure this union is always non-empty */
+    unsigned dummy; /* Make sure this structure is always non-empty */
     mbedtls_psa_hash_operation_t mbedtls_ctx;
 #if defined(PSA_CRYPTO_DRIVER_TEST)
     mbedtls_transparent_test_driver_hash_operation_t test_driver_ctx;
