@@ -30,6 +30,7 @@
  * declared during the autogeneration process. */
 
 /* Include the context structure definitions for the Mbed TLS software drivers */
+#include "psa/crypto_builtin_mac.h"
 #include "psa/crypto_builtin_hash.h"
 
 /* Define the context to be used for an operation that is executed through the
@@ -38,6 +39,15 @@
  * The union members are the driver's context structures, and the member names
  * are formatted as `'drivername'_ctx`. This allows for procedural generation
  * of both this file and the content of psa_crypto_driver_wrappers.c */
+
+typedef union {
+    unsigned dummy; /* Make sure this structure is always non-empty */
+    mbedtls_psa_mac_operation_t mbedtls_ctx;
+#if defined(PSA_CRYPTO_DRIVER_TEST)
+    mbedtls_transparent_test_driver_mac_operation_t transparent_test_driver_ctx;
+    mbedtls_opaque_test_driver_mac_operation_t opaque_test_driver_ctx;
+#endif
+} psa_driver_mac_context_t;
 
 typedef union {
     unsigned dummy; /* Make sure this structure is always non-empty */

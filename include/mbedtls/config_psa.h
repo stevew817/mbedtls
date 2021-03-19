@@ -40,6 +40,13 @@ extern "C" {
 
 #if defined(MBEDTLS_PSA_CRYPTO_CONFIG)
 
+#if defined(PSA_WANT_ALG_CMAC)
+#if !defined(MBEDTLS_PSA_ACCEL_ALG_CMAC)
+#define MBEDTLS_PSA_BUILTIN_ALG_CMAC 1
+#define MBEDTLS_CMAC_C
+#endif /* !MBEDTLS_PSA_ACCEL_ALG_CMAC */
+#endif /* PSA_WANT_ALG_CMAC */
+
 #if defined(PSA_WANT_ALG_DETERMINISTIC_ECDSA)
 #if !defined(MBEDTLS_PSA_ACCEL_ALG_DETERMINISTIC_ECDSA)
 #define MBEDTLS_PSA_BUILTIN_ALG_DETERMINISTIC_ECDSA 1
@@ -361,6 +368,11 @@ extern "C" {
  * Ensure PSA_WANT_* defines are setup properly if MBEDTLS_PSA_CRYPTO_CONFIG
  * is not defined
  */
+
+#if defined(MBEDTLS_CMAC_C)
+#define MBEDTLS_PSA_BUILTIN_ALG_CMAC 1
+#define PSA_WANT_ALG_CMAC 1
+#endif /* MBEDTLS_CMAC_C */
 
 #if defined(MBEDTLS_ECDH_C)
 #define MBEDTLS_PSA_BUILTIN_ALG_ECDH 1
