@@ -56,6 +56,18 @@ typedef union {
 #endif
 } psa_driver_hash_context_t;
 
+struct psa_hash_operation_s
+{
+    /** Unique ID indicating which driver got assigned to do the
+     * operation. Since driver contexts are driver-specific, swapping
+     * drivers halfway through the operation is not supported.
+     * ID values are auto-generated in psa_driver_wrappers.h
+     * ID value zero means the context is not valid or not assigned to
+     * any driver (i.e. none of the driver contexts are active). */
+    unsigned int id;
+    psa_driver_hash_context_t ctx;
+};
+
 typedef union {
     unsigned dummy; /* Make sure this union is always non-empty */
     mbedtls_psa_cipher_operation_t mbedtls_ctx;
@@ -65,6 +77,30 @@ typedef union {
 #endif
 } psa_driver_cipher_context_t;
 
+struct psa_cipher_operation_s
+{
+    /** Unique ID indicating which driver got assigned to do the
+     * operation. Since driver contexts are driver-specific, swapping
+     * drivers halfway through the operation is not supported.
+     * ID values are auto-generated in psa_crypto_driver_wrappers.h
+     * ID value zero means the context is not valid or not assigned to
+     * any driver (i.e. none of the driver contexts are active). */
+    unsigned int id;
+
+    unsigned int iv_required : 1;
+    unsigned int iv_set : 1;
+
+    uint8_t default_iv_length;
+
+    psa_driver_cipher_context_t ctx;
+};
+
+/* The builtin MAC driver needs to be able to rely on a PSA hash operation
+ * structure (psa_hash_operation_s) in order to perform HMAC. Therefore, that
+ * hash operation structure needs to be declared before including the builtin
+ * MAC driver structure definition. */
+#include "psa/crypto_builtin_mac.h"
+
 typedef union {
     unsigned dummy; /* Make sure this structure is always non-empty */
     mbedtls_psa_mac_operation_t mbedtls_ctx;
@@ -73,6 +109,18 @@ typedef union {
     mbedtls_opaque_test_driver_mac_operation_t opaque_test_driver_ctx;
 #endif
 } psa_driver_mac_context_t;
+
+struct psa_mac_operation_s
+{
+    /** Unique ID indicating which driver got assigned to do the
+     * operation. Since driver contexts are driver-specific, swapping
+     * drivers halfway through the operation is not supported.
+     * ID values are auto-generated in psa_driver_wrappers.h
+     * ID value zero means the context is not valid or not assigned to
+     * any driver (i.e. none of the driver contexts are active). */
+    unsigned int id;
+    psa_driver_mac_context_t ctx;
+};
 
 #endif /* PSA_CRYPTO_DRIVER_CONTEXTS_H */
 /* End of automatically generated file. */

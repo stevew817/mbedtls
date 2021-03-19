@@ -223,6 +223,7 @@
     <ClInclude Include="..\..\include\mbedtls\xtea.h" />
     <ClInclude Include="..\..\include\psa\crypto.h" />
     <ClInclude Include="..\..\include\psa\crypto_builtin.h" />
+    <ClInclude Include="..\..\include\psa\crypto_builtin_mac.h" />
     <ClInclude Include="..\..\include\psa\crypto_compat.h" />
     <ClInclude Include="..\..\include\psa\crypto_config.h" />
     <ClInclude Include="..\..\include\psa\crypto_driver_common.h" />
