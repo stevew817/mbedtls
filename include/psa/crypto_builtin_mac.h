@@ -1,6 +1,12 @@
-/*
- *  Context structure declaration of the software-based driver which performs
- *  MAC through the PSA Crypto driver dispatch layer.
+/**
+ * \file psa/crypto_builtin_mac.h
+ *
+ * \brief Context structure declaration of the software-based driver which
+ * performs MAC through the PSA Crypto driver dispatch layer.
+ *
+ * \note This file may not be included directly, due to a dependency on the
+ * PSA hash operation context definition.
+ *
  */
 /*
  *  Copyright The Mbed TLS Contributors
@@ -30,10 +36,38 @@
 #define MBEDTLS_PSA_BUILTIN_MAC
 #endif
 
+#if defined(PSA_WANT_ALG_HMAC)
+typedef struct
+{
+    /** The HMAC algorithm in use */
+    psa_algorithm_t alg;
+    /** The hash context. */
+    struct psa_hash_operation_s hash_ctx;
+    /** The HMAC part of the context. */
+    uint8_t opad[PSA_HMAC_MAX_HASH_BLOCK_SIZE];
+} psa_hmac_internal_data;
+#endif /* PSA_WANT_ALG_HMAC */
+
 typedef struct
 {
     psa_algorithm_t alg;
-    /* To be fleshed out in a later commit. */
+    unsigned int key_set : 1;
+    unsigned int iv_required : 1;
+    unsigned int iv_set : 1;
+    unsigned int has_input : 1;
+    unsigned int is_sign : 1;
+    uint8_t mac_size;
+    unsigned int id;
+    union
+    {
+        unsigned dummy; /* Make the union non-empty even with no supported algorithms. */
+#if defined(PSA_WANT_ALG_HMAC)
+        psa_hmac_internal_data hmac;
+#endif
+#if defined(MBEDTLS_CMAC_C)
+        mbedtls_cipher_context_t cmac;
+#endif
+    } ctx;
 } mbedtls_psa_mac_operation_t;
 
 #define MBEDTLS_PSA_MAC_OPERATION_INIT {0, {0}}

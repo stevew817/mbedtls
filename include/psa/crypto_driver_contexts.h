@@ -30,7 +30,6 @@
  * declared during the autogeneration process. */
 
 /* Include the context structure definitions for the Mbed TLS software drivers */
-#include "psa/crypto_builtin_mac.h"
 #include "psa/crypto_builtin_hash.h"
 
 /* Define the context to be used for an operation that is executed through the
@@ -42,6 +41,39 @@
 
 typedef union {
     unsigned dummy; /* Make sure this structure is always non-empty */
+    mbedtls_psa_hash_operation_t mbedtls_ctx;
+#if defined(PSA_CRYPTO_DRIVER_TEST)
+    mbedtls_transparent_test_driver_hash_operation_t test_driver_ctx;
+#endif
+} psa_driver_hash_context_t;
+
+struct psa_hash_operation_s
+{
+    /** Unique ID indicating which driver got assigned to do the
+     * operation. Since driver contexts are driver-specific, swapping
+     * drivers halfway through the operation is not supported.
+     * ID values are auto-generated in psa_driver_wrappers.h
+     * ID value zero means the context is not valid or not assigned to
+     * any driver (i.e. none of the driver contexts are active). */
+    unsigned int id;
+    psa_driver_hash_context_t ctx;
+};
+
+#define PSA_HASH_OPERATION_INIT {0, {0}}
+static inline struct psa_hash_operation_s psa_hash_operation_init( void )
+{
+    const struct psa_hash_operation_s v = PSA_HASH_OPERATION_INIT;
+    return( v );
+}
+
+/* The builtin MAC driver needs to be able to rely on a PSA hash operation
+ * structure (psa_hash_operation_s) in order to perform HMAC. Therefore, that
+ * hash operation structure needs to be declared before including the builtin
+ * MAC driver structure definition. */
+#include "psa/crypto_builtin_mac.h"
+
+typedef union {
+    unsigned dummy; /* Make sure this structure is always non-empty */
     mbedtls_psa_mac_operation_t mbedtls_ctx;
 #if defined(PSA_CRYPTO_DRIVER_TEST)
     mbedtls_transparent_test_driver_mac_operation_t transparent_test_driver_ctx;
@@ -49,13 +81,24 @@ typedef union {
 #endif
 } psa_driver_mac_context_t;
 
-typedef union {
-    unsigned dummy; /* Make sure this structure is always non-empty */
-    mbedtls_psa_hash_operation_t mbedtls_ctx;
-#if defined(PSA_CRYPTO_DRIVER_TEST)
-    mbedtls_transparent_test_driver_hash_operation_t test_driver_ctx;
-#endif
-} psa_driver_hash_context_t;
+struct psa_mac_operation_s
+{
+    /** Unique ID indicating which driver got assigned to do the
+     * operation. Since driver contexts are driver-specific, swapping
+     * drivers halfway through the operation is not supported.
+     * ID values are auto-generated in psa_driver_wrappers.h
+     * ID value zero means the context is not valid or not assigned to
+     * any driver (i.e. none of the driver contexts are active). */
+    unsigned int id;
+    psa_driver_mac_context_t ctx;
+};
+
+#define PSA_MAC_OPERATION_INIT {0, {0}}
+static inline struct psa_mac_operation_s psa_mac_operation_init( void )
+{
+    const struct psa_mac_operation_s v = PSA_MAC_OPERATION_INIT;
+    return( v );
+}
 
 #endif /* PSA_CRYPTO_DRIVER_CONTEXTS_H */
 /* End of automatically generated file. */

@@ -2406,7 +2406,7 @@ static size_t psa_get_hash_block_size( psa_algorithm_t alg )
 
 /* Initialize the MAC operation structure. Once this function has been
  * called, psa_mac_abort can run and will do the right thing. */
-static psa_status_t psa_mac_init( psa_mac_operation_t *operation,
+static psa_status_t psa_mac_init( mbedtls_psa_mac_operation_t *operation,
                                   psa_algorithm_t alg )
 {
     psa_status_t status = PSA_ERROR_NOT_SUPPORTED;
@@ -2454,8 +2454,11 @@ static psa_status_t psa_hmac_abort_internal( psa_hmac_internal_data *hmac )
 }
 #endif /* MBEDTLS_PSA_BUILTIN_ALG_HMAC */
 
-psa_status_t psa_mac_abort( psa_mac_operation_t *operation )
+psa_status_t psa_mac_abort( psa_mac_operation_t *psa_operation )
 {
+    /* Temporary recast to avoid changing a lot of lines */
+    mbedtls_psa_mac_operation_t* operation = &psa_operation->ctx.mbedtls_ctx;
+
     if( operation->alg == 0 )
     {
         /* The object has (apparently) been initialized but it is not
@@ -2503,7 +2506,7 @@ bad_state:
 }
 
 #if defined(MBEDTLS_CMAC_C)
-static psa_status_t psa_cmac_setup( psa_mac_operation_t *operation,
+static psa_status_t psa_cmac_setup( mbedtls_psa_mac_operation_t *operation,
                                     psa_key_slot_t *slot )
 {
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
@@ -2592,7 +2595,7 @@ cleanup:
 }
 #endif /* MBEDTLS_PSA_BUILTIN_ALG_HMAC */
 
-static psa_status_t psa_mac_setup( psa_mac_operation_t *operation,
+static psa_status_t psa_mac_setup( mbedtls_psa_mac_operation_t *operation,
                                    mbedtls_svc_key_id_t key,
                                    psa_algorithm_t alg,
                                    int is_sign )
@@ -2712,10 +2715,13 @@ psa_status_t psa_mac_verify_setup( psa_mac_operation_t *operation,
     return( psa_mac_setup( operation, key, alg, 0 ) );
 }
 
-psa_status_t psa_mac_update( psa_mac_operation_t *operation,
+psa_status_t psa_mac_update( psa_mac_operation_t *psa_operation,
                              const uint8_t *input,
                              size_t input_length )
 {
+    /* Temporary recast to avoid changing a lot of lines */
+    mbedtls_psa_mac_operation_t* operation = &psa_operation->ctx.mbedtls_ctx;
+
     psa_status_t status = PSA_ERROR_BAD_STATE;
     if( ! operation->key_set )
         return( PSA_ERROR_BAD_STATE );
@@ -2747,7 +2753,7 @@ psa_status_t psa_mac_update( psa_mac_operation_t *operation,
     }
 
     if( status != PSA_SUCCESS )
-        psa_mac_abort( operation );
+        psa_mac_abort( psa_operation );
     return( status );
 }
 
@@ -2791,7 +2797,7 @@ exit:
 }
 #endif /* MBEDTLS_PSA_BUILTIN_ALG_HMAC */
 
-static psa_status_t psa_mac_finish_internal( psa_mac_operation_t *operation,
+static psa_status_t psa_mac_finish_internal( mbedtls_psa_mac_operation_t *operation,
                                              uint8_t *mac,
                                              size_t mac_size )
 {
@@ -2830,11 +2836,14 @@ static psa_status_t psa_mac_finish_internal( psa_mac_operation_t *operation,
     }
 }
 
-psa_status_t psa_mac_sign_finish( psa_mac_operation_t *operation,
+psa_status_t psa_mac_sign_finish( psa_mac_operation_t *psa_operation,
                                   uint8_t *mac,
                                   size_t mac_size,
                                   size_t *mac_length )
 {
+    /* Temporary recast to avoid changing a lot of lines */
+    mbedtls_psa_mac_operation_t* operation = &psa_operation->ctx.mbedtls_ctx;
+
     psa_status_t status;
 
     if( operation->alg == 0 )
@@ -2860,21 +2869,24 @@ psa_status_t psa_mac_sign_finish( psa_mac_operation_t *operation,
 
     if( status == PSA_SUCCESS )
     {
-        status = psa_mac_abort( operation );
+        status = psa_mac_abort( psa_operation );
         if( status == PSA_SUCCESS )
             *mac_length = operation->mac_size;
         else
             memset( mac, '!', mac_size );
     }
     else
-        psa_mac_abort( operation );
+        psa_mac_abort( psa_operation );
     return( status );
 }
 
-psa_status_t psa_mac_verify_finish( psa_mac_operation_t *operation,
+psa_status_t psa_mac_verify_finish( psa_mac_operation_t *psa_operation,
                                     const uint8_t *mac,
                                     size_t mac_length )
 {
+    /* Temporary recast to avoid changing a lot of lines */
+    mbedtls_psa_mac_operation_t* operation = &psa_operation->ctx.mbedtls_ctx;
+
     uint8_t actual_mac[PSA_MAC_MAX_SIZE];
     psa_status_t status;
 
@@ -2903,9 +2915,9 @@ psa_status_t psa_mac_verify_finish( psa_mac_operation_t *operation,
 
 cleanup:
     if( status == PSA_SUCCESS )
-        status = psa_mac_abort( operation );
+        status = psa_mac_abort( psa_operation );
     else
-        psa_mac_abort( operation );
+        psa_mac_abort( psa_operation );
 
     mbedtls_platform_zeroize( actual_mac, sizeof( actual_mac ) );
 
