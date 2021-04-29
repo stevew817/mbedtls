@@ -212,59 +212,18 @@ static psa_status_t cmac_setup( mbedtls_psa_mac_operation_t *operation,
                                 size_t key_buffer_size )
 {
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
-    mbedtls_cipher_id_t cipher_id_tmp;
-    const mbedtls_cipher_info_t * cipher_info_tmp;
-    size_t key_bits = psa_get_key_bits( attributes );
-
-    if( key_buffer_size < PSA_BITS_TO_BYTES( key_bits ) )
-        return( PSA_ERROR_INVALID_ARGUMENT );
-
-    switch( psa_get_key_type( attributes ) )
-    {
-#if defined(MBEDTLS_PSA_BUILTIN_KEY_TYPE_AES)
-        case PSA_KEY_TYPE_AES:
-            cipher_id_tmp = MBEDTLS_CIPHER_ID_AES;
-            break;
-#endif
-#if defined(MBEDTLS_PSA_BUILTIN_KEY_TYPE_DES)
-        case PSA_KEY_TYPE_DES:
-            /* key_bits is 64 for Single-DES, 128 for two-key Triple-DES,
-             * and 192 for three-key Triple-DES. */
-            if( key_bits == 64 )
-                cipher_id_tmp = MBEDTLS_CIPHER_ID_DES;
-            else
-                cipher_id_tmp = MBEDTLS_CIPHER_ID_3DES;
-            /* mbedtls doesn't recognize two-key Triple-DES as an algorithm,
-             * but two-key Triple-DES is functionally three-key Triple-DES
-             * with K1=K3, so that's how we present it to mbedtls. */
-            if( key_bits == 128 )
-                key_bits = 192;
-            break;
-#endif
-#if defined(MBEDTLS_PSA_BUILTIN_KEY_TYPE_CAMELLIA)
-        case PSA_KEY_TYPE_CAMELLIA:
-            cipher_id_tmp = MBEDTLS_CIPHER_ID_CAMELLIA;
-            break;
-#endif
-#if defined(MBEDTLS_PSA_BUILTIN_KEY_TYPE_ARC4)
-        case PSA_KEY_TYPE_ARC4:
-            cipher_id_tmp = MBEDTLS_CIPHER_ID_ARC4;
-            break;
-#endif
-#if defined(MBEDTLS_PSA_BUILTIN_KEY_TYPE_CHACHA20)
-        case PSA_KEY_TYPE_CHACHA20:
-            cipher_id_tmp = MBEDTLS_CIPHER_ID_CHACHA20;
-            break;
-#endif
-        default:
-            return( PSA_ERROR_NOT_SUPPORTED );
-    }
-
-    cipher_info_tmp = mbedtls_cipher_info_from_values(
-                        cipher_id_tmp, (int) key_bits, MBEDTLS_MODE_ECB );
+    const mbedtls_cipher_info_t * cipher_info_tmp =
+        mbedtls_cipher_info_from_psa(
+            PSA_ALG_CMAC,
+            psa_get_key_type( attributes ),
+            psa_get_key_bits( attributes ),
+            NULL );
 
     if( cipher_info_tmp == NULL )
         return( PSA_ERROR_NOT_SUPPORTED );
+
+    if( key_buffer_size < PSA_BITS_TO_BYTES( psa_get_key_bits( attributes ) ) )
+        return( PSA_ERROR_INVALID_ARGUMENT );
 
     ret = mbedtls_cipher_setup( &operation->ctx.cmac, cipher_info_tmp );
     if( ret != 0 )
