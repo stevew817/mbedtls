@@ -210,9 +210,6 @@ static psa_status_t cmac_setup( mbedtls_psa_mac_operation_t *operation,
     if( cipher_info == NULL )
         return( PSA_ERROR_NOT_SUPPORTED );
 
-    if( key_buffer_size < PSA_BITS_TO_BYTES( psa_get_key_bits( attributes ) ) )
-        return( PSA_ERROR_INVALID_ARGUMENT );
-
     ret = mbedtls_cipher_setup( &operation->ctx.cmac, cipher_info );
     if( ret != 0 )
         goto exit;
